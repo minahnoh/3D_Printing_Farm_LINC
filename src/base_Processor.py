@@ -61,6 +61,95 @@ class Machine:
         self.last_status_change = 0
         self.allows_job_addition_during_processing = False
 
+# ============================================================
+#   NEW: Concrete Machine Types (Washer, Dryer, UV, Preproc...)
+# ============================================================
+
+class WasherM1(Machine):
+    def __init__(self, env, capacity, wash_time):
+        super().__init__(
+            id_machine=101,
+            name_process="wash_m1",
+            name_machine="Washer_M1",
+            processing_time=wash_time,
+            capacity_jobs=capacity
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+class WasherM2(Machine):
+    def __init__(self, env, capacity, wash_time):
+        super().__init__(
+            id_machine=102,
+            name_process="wash_m2",
+            name_machine="Washer_M2",
+            processing_time=wash_time,
+            capacity_jobs=capacity
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+class Dryer(Machine):
+    def __init__(self, env, capacity, dry_time):
+        super().__init__(
+            id_machine=103,
+            name_process="dry",
+            name_machine="Dryer",
+            processing_time=dry_time,
+            capacity_jobs=capacity
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+class UVUnit(Machine):
+    def __init__(self, env, capacity, uv_time):
+        super().__init__(
+            id_machine=104,
+            name_process="uv",
+            name_machine="UV_Unit",
+            processing_time=uv_time,
+            capacity_jobs=capacity
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+class PreprocServer(Machine):
+    def __init__(self, env, capacity, proc_time):
+        super().__init__(
+            id_machine=105,
+            name_process="preproc",
+            name_machine="Preprocessing_Server",
+            processing_time=proc_time,
+            capacity_jobs=capacity
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+class PrinterMachine(Machine):
+    def __init__(self, env, printer_id, print_time):
+        super().__init__(
+            id_machine=200 + printer_id,
+            name_process="print",
+            name_machine=f"Printer_{printer_id}",
+            processing_time=print_time,
+            capacity_jobs=1
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+class PlatformWasher(Machine):
+    def __init__(self, env, capacity, wash_time):
+        super().__init__(
+            id_machine=106,
+            name_process="platform_wash",
+            name_machine="PlatformWasher",
+            processing_time=wash_time,
+            capacity_jobs=capacity
+        )
+        self.resource = ProcessorResource(env, self)
+
+
+
 
 class ProcessorResource(simpy.Resource):
     """

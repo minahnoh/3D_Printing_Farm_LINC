@@ -15,6 +15,7 @@ class Job:
         time_waiting_end (float): Time when waiting ended
         is_reprocess (bool): Flag for reprocessed jobs
         processing_history (list): List of processing history
+        platform_id (str): ID of the build platform this job is assigned to
     """
 
     def __init__(self, id_job, list_items):
@@ -26,6 +27,7 @@ class Job:
         self.time_waiting_start = None
         self.time_waiting_end = None
         self.is_reprocess = False  # Flag for reprocessed jobs
+        self.platform_id = None    # Platform ID for job assignment
 
         # Add processing history to track jobs across all processes
         self.processing_history = []  # Will store each process step details
