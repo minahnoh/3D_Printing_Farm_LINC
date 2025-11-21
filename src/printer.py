@@ -17,7 +17,7 @@ class PrinterDispatcher:
             if self.logger:
                 self.logger.log_event(
                     "Dispatcher",
-                    f"[DISPATCH] Job {job_id}, Platform {platform_id} → stacker"
+                    f"[DISPATCH] Job {job_id}, Platform {platform_id} -> stacker"
                 )
 
             n_parts = self.P["print"].get("max_parts_per_platform", 8)
@@ -30,7 +30,8 @@ class PrinterDispatcher:
                 "job_id": job_id
             }
 
-            yield self.stacker.put(payload)
+            # yield self.stacker.put(payload)
+            self.env.process(self.factory.print_pipeline(payload))
 
             self.kpi.started_platforms += 1
             self.kpi.finished_platforms += 1

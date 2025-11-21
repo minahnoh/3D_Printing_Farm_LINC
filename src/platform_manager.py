@@ -18,10 +18,15 @@ class PlatformManager:
             self.clean_platforms.items.append(token)
 
     def get_clean_platform(self):
-        return (yield self.clean_platforms.get())
+        def _proc():
+            token = yield self.clean_platforms.get()
+            return token
+        return self.env.process(_proc())
 
     def return_platform(self, token):
-        yield self.clean_platforms.put(token)
+        def _proc():
+            yield self.clean_platforms.put(token)
+        return self.env.process(_proc())
 
     def total_platforms(self):
         return len(self.tokens)

@@ -1,5 +1,6 @@
 from base_Job import JobStore
-from base_Processor import ProcessorResource
+
+# from base_Processor import ProcessorResource
 
 class Process:
     """
@@ -64,7 +65,7 @@ class Process:
         self.list_processors.append(processor)
 
         # Create ProcessorResource (integrated resource management)
-        processor_resource = ProcessorResource(self.env, processor)
+        # processor_resource = ProcessorResource(self.env, processor)
 
         # Determine id based on processor type
         if processor.type_processor == "Machine":

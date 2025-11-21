@@ -25,12 +25,13 @@ def run_simulation(sim_duration=SIM_TIME):
 
     # === Factory 공정 프로세스 시작 ===
     # 전처리: pre_in -> ready (플랫폼 토큰 할당 + Job↔Platform 매핑)
+    '''
     env.process(manager.factory.preproc_worker())
     # 프린팅/후공정 자동 흐름: ready -> print_pipeline
     env.process(manager.factory.printer_dispatcher())
     # 수동 후공정(서포트 제거, 피니싱, 도장)
     env.process(manager.factory.worker_manual_ops())
-
+    '''
     # (옵션) 도착/공급 방식: arrivals나 infinite_feeder 중 택1 사용 시
     # env.process(manager.factory.arrivals())
     # 또는

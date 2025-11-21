@@ -57,7 +57,7 @@ POLICY_ORDER_TO_JOB = "MAX_PER_JOB"
 
 
 def NUM_PATIENTS_PER_ORDER(): return random.randint(
-    3, 3)
+    1, 1)
 
 # Number of items per patient
 

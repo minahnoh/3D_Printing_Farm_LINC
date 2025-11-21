@@ -1,9 +1,10 @@
 from base_Job import Job
 from config_SimPy import *
-from specialized_Process import Proc_Build, Proc_Wash, Proc_Dry, Proc_Inspect
+# from specialized_Process import Proc_Build, Proc_Wash, Proc_Dry, Proc_Inspect
 from base_Customer import OrderReceiver
 from factory_platform import Factory, PlatformKPI
 from config_SimPy import build_factory_param_dict
+from job_platform_mapper import JobPlatformMapper
 
 
 
@@ -39,7 +40,7 @@ class Manager(OrderReceiver):
     def setup_processes(self, manager=None):
         """Create and connect all manufacturing processes"""
         
-       
+        '''
         # Create processes
         self.proc_build = Proc_Build(self.env, self.logger)
         self.proc_wash = Proc_Wash(self.env, self.logger)
@@ -50,7 +51,8 @@ class Manager(OrderReceiver):
         self.proc_build.connect_to_next_process(self.proc_wash)
         self.proc_wash.connect_to_next_process(self.proc_dry)
         self.proc_dry.connect_to_next_process(self.proc_inspect)
-
+        '''
+    
         # Factory 
         P_factory = build_factory_param_dict()
         kpi_factory = PlatformKPI()
@@ -87,18 +89,21 @@ class Manager(OrderReceiver):
                 job = Job(self.next_job_id, patient_items)
                 self.next_job_id += 1
 
+                '''
                 # Assign unique platform ID to this job
                 platform_id = f"PLAT-{job.id_job}"
                 job.platform_id = platform_id
                 self.job_to_platform[job.id_job] = platform_id
                 self.platform_to_job[platform_id] = job
-
+                '''
+                
                 # Send job to Build process
                 if self.logger:
                     self.logger.log_event(
                         "Manager", f"Created job {job.id_job} for patient {patient.id_patient} with {len(patient_items)} items")
                 
-                self.env.process(self.factory.submit_job(job))
+                # 기존 self.env.process(self.factory.submit_job(job)) -> factory 공정으로 job넘김
+                self.factory.submit_job(job)
 
             else:
                 # Patient's items exceed PALLET_SIZE_LIMIT, apply splitting policy
@@ -111,16 +116,16 @@ class Manager(OrderReceiver):
                         self.next_job_id += 1
 
                         # Assign unique platform ID to this job
-                        platform_id = f"PLAT-{job.id_job}"
-                        job.platform_id = platform_id
-                        self.job_to_platform[job.id_job] = platform_id
-                        self.platform_to_job[platform_id] = job
+                        #platform_id = f"PLAT-{job.id_job}"
+                        # job.platform_id = platform_id
+                        # self.job_to_platform[job.id_job] = platform_id
+                        # self.platform_to_job[platform_id] = job
 
                         # Send job to Build process
                         if self.logger:
                             self.logger.log_event(
                                 "Manager", f"Created job {job.id_job} for patient {patient.id_patient} with {len(job_items)} items (split job)")
-                        self.env.process(self.factory.submit_job(job))
+                        self.factory.submit_job(job)
 
                 # Additional policies can be implemented here if needed
 

@@ -18,14 +18,16 @@ class PreprocessingManager:
             item = yield self.pre_in.get()
 
             # 1) use preproc
-            with self.preproc.request() as rq:
-                t0 = self.env.now
-                yield rq
-                wait = self.env.now - t0
-                self.kpi.add_wait("preproc", wait)
-                t = self.t_preproc()
-                self.kpi.preproc_busy_min += t
-                yield self.env.timeout(t)
+            req = self.preproc.request()
+            t0 = self.env.now
+            yield req
+
+            wait = self.env.now - t0
+            self.kpi.add_wait("preproc", wait)
+
+            t = self.t_preproc()
+            self.kpi.preproc_busy_min += t
+            yield self.env.timeout(t)
 
             # 2) clean platform
             token = yield self.clean_plat.get_clean_platform()
@@ -40,9 +42,9 @@ class PreprocessingManager:
             # 3) mapping
             self.mapper.assign(job_id, platform_id)
 
-            # debugging
+            # validation: confirm correct Job ↔ Platform mapping
             if self.logger:
-                self.logger.log_event("Preproc", f"Assigned {job_id} → {platform_id}")
+                self.logger.log_event("Preproc", f"Assigned {job_id} to {platform_id}")
 
             yield self.ready.put(item)
             self.kpi.n_preproc_jobs += 1
