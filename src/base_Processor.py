@@ -61,7 +61,6 @@ class BaseProcessor:
         yield from self.work(job_id, duration)
         self.release(req, job_id)
 
-    # Utilization and Reporting
     def utilization(self, sim_time: float) -> float:
         """Return utilization ratio between 0 and 1."""
         if sim_time <= 0:
