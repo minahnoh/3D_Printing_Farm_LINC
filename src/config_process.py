@@ -36,7 +36,6 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
         "policy_reproc_seq_in_queue": "QUEUE_LAST",     # POLICY_REPROC_SEQ_IN_QUEUE
 
         # setting for platform
-        "initial_platforms": 20,
         "install_time_min": 40,
         "install_parallel": True,
     },

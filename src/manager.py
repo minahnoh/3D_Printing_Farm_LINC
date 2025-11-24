@@ -1,9 +1,7 @@
 from base_Job import Job
 from config_SimPy import *
-# from specialized_Process import Proc_Build, Proc_Wash, Proc_Dry, Proc_Inspect
 from base_Customer import OrderReceiver
-from factory_platform import Factory, PlatformKPI
-from config_SimPy import build_factory_param_dict
+from factory_platform import Factory
 from job_platform_mapper import JobPlatformMapper
 
 
