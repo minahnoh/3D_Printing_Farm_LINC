@@ -1,26 +1,43 @@
-from base_Processor import Worker, Machine
-from config_SimPy import *
+from typing import Optional
+import simpy
+from base_Processor import BaseProcessor
 
 
-class Worker_Inspect(Worker):
-    def __init__(self, id_worker):
-        super().__init__(
-            id_worker, f"Inspector_{id_worker}", PROC_TIME_INSPECT)
+class Printer(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, proc_time: float):
+        super().__init__(env, name="Printer", capacity=capacity, proc_time=proc_time)
 
 
-class Mach_3DPrint(Machine):
-    def __init__(self, id_machine):
-        super().__init__(id_machine, "Proc_Build",
-                         f"3DPrinter_{id_machine}", PROC_TIME_BUILD, CAPACITY_MACHINE_BUILD)
+class WashM1(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, wash_time: float):
+        super().__init__(env, name="WashM1", capacity=capacity, proc_time=wash_time)
 
 
-class Mach_Wash(Machine):
-    def __init__(self, id_machine):
-        super().__init__(id_machine, "Proc_Wash",
-                         f"Washer_{id_machine}", PROC_TIME_WASH, CAPACITY_MACHINE_WASH)
+class WashM2(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, wash_time: float):
+        super().__init__(env, name="WashM2", capacity=capacity, proc_time=wash_time)
 
 
-class Mach_Dry(Machine):
-    def __init__(self, id_machine):
-        super().__init__(id_machine, "Proc_Dry",
-                         f"Dryer_{id_machine}", PROC_TIME_DRY, CAPACITY_MACHINE_DRY)
+class Dryer(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, dry_time: float):
+        super().__init__(env, name="Dryer", capacity=capacity, proc_time=dry_time)
+
+
+class UVStation(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, uv_time: float):
+        super().__init__(env, name="UV", capacity=capacity, proc_time=uv_time)
+
+
+class AMR(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, default_travel_time: float = 0.0):
+        super().__init__(env, name="AMRPool", capacity=capacity, proc_time=default_travel_time)
+
+
+class Worker(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, default_task_time: float = 0.0):
+        super().__init__(env, name="Worker", capacity=capacity, proc_time=default_task_time)
+
+
+class PlatformWasher(BaseProcessor):
+    def __init__(self, env: simpy.Environment, capacity: int, wash_time: float):
+        super().__init__(env, name="PlatformWasher", capacity=capacity, proc_time=wash_time)
