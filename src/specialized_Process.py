@@ -1,14 +1,5 @@
-"""
-specialized_Process.py
-3D-printing factory workflow assembly:
-Preprocessing → Printing → Auto Post-Process → Manual Post-Process → Platform Cleaning
-
-Each stage uses processors from specialized_Processor.py and tracks KPI usage.
-"""
-
 import simpy
 from typing import Any, Dict
-
 from specialized_Processor import (
     Printer,
     WashM1,
@@ -23,7 +14,7 @@ from KPI import KPI
 from base_Job import Job
 
 
-class PreprocessStage:
+class Preprocess:
     def __init__(self, env: simpy.Environment, cfg: Dict[str, Any], platM: PlatformManager, kpi: KPI, logger=None):
         self.env = env
         self.cfg = cfg["preproc"]
@@ -33,29 +24,39 @@ class PreprocessStage:
 
     def run(self, job: Job):
         """Assign platform + basic prep timing."""
+        
+        # Get an available platform
         token = yield self.platM.get_clean_platform()
-        platform_id = token["id"]
-
+        
+        # Store info on the Job object
+        platform_id = self.platM.assign(job.id_job, token)
         job.platform_id = platform_id
         job.start_time = self.env.now
         self.kpi.started_platforms += 1
         self.kpi.n_preproc_jobs += 1
 
+        # Preprocess timing logic
         t = (
             self.cfg["healing_time_per_platform_min"]
             + self.cfg["placement_time_per_platform_min"]
-            + self.cfg["support_time_per_platform_min"]
+            + self.cfg["support_generation_time_min"]
         )
         self.kpi.preproc_busy_min += t
-
+       
         if self.logger:
-            self.logger.log_event("PREPROC", f"Platform {platform_id} → Job {job.id_job} prep start for {t} min")
-
+            self.logger.log_event(
+                "PREPROC",
+                f"[ASSIGN] Job {job.id_job} ← Platform {platform_id} | preprocessing_total_time: {t} min"
+                f"| healing time = {self.cfg["placement_time_per_platform_min"]} min |"
+                f"| support_generation_time= {self.cfg["support_generation_time_min"]} min |"
+                
+        )
+        
         yield self.env.timeout(t)
         return token
 
 
-class PrintStage:
+class Print:
     def __init__(self, env, cfg, kpi: KPI, logger=None):
         self.env = env
         self.kpi = kpi
@@ -70,13 +71,15 @@ class PrintStage:
             self.kpi.printer_busy_min += t
             self.kpi.n_print_jobs += 1
 
+            """
             if self.logger:
                 self.logger.log_event("PRINT", f"Job {job.id_job} printing {t} min")
+            """
 
             yield self.env.timeout(t)
 
 
-class AutoPostStage:
+class AutoPost:
     def __init__(self, env, cfg, kpi: KPI, logger=None):
         self.env = env
         self.cfg = cfg["auto_post"]
@@ -122,32 +125,34 @@ class AutoPostStage:
             yield self.env.timeout(t)
 
 
-class ManualPostStage:
+class ManualPost:
     def __init__(self, env, cfg, kpi: KPI, logger=None):
         self.env = env
         self.cfg = cfg["manual_ops"]
         self.kpi = kpi
         self.logger = logger
 
-        self.workers = ManualWorkerPool(env, self.cfg["workers"], 0)
+        self.workers = Worker(env, self.cfg["workers"], 0)
 
     def run(self, job: Job):
         with self.workers.resource.request() as req:
             yield req
             t = (
-                self.cfg["support_time_per_platform_min"]
+                self.cfg["support_removal_time_min"]
                 + self.cfg["finish_time_per_part_min"] * len(job.list_items)
                 + self.cfg["paint_time_per_part_min"] * len(job.list_items)
             )
             self.kpi.manual_busy_min += t
 
+            """
             if self.logger:
                 self.logger.log_event("MANUAL", f"Job {job.id_job} finishing {t} min")
+            """
 
             yield self.env.timeout(t)
 
 
-class PlatformCleanStage:
+class PlatformClean:
     def __init__(self, env, cfg, platM: PlatformManager, kpi: KPI, logger=None):
         self.env = env
         self.cfg = cfg["platform_clean"]
@@ -163,18 +168,22 @@ class PlatformCleanStage:
             t = self.cleaner.proc_time
             self.kpi.platform_wash_busy_min += t
 
+            """
             if self.logger:
                 self.logger.log_event("PLAT_CLEAN", f"Platform {platform_token['id']} wash {t} min")
+            """
 
             yield self.env.timeout(t)
 
-        # platform goes back to available pool!
-        yield self.platM.return_platform(platform_token)
+        # platform goes back to available pool
+        yield self.platM.release_platform(platform_token)
 
         # KPI final add
         lead = self.env.now - job.start_time
         self.kpi.sum_platform_lead_time_min += lead
         self.kpi.finished_platforms += 1
 
+        """
         if self.logger:
             self.logger.log_event("FINISH", f"Job {job.id_job} DONE lead {lead:.1f}min")
+        """

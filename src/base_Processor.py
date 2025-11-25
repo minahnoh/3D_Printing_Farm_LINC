@@ -8,7 +8,7 @@ class BaseProcessor:
         self.env = env
         self.name = name
         self.capacity = max(1, int(capacity))
-        self.default_time = float(proc_time)
+        self.proc_time = float(proc_time)
         self.resource = simpy.Resource(env, capacity=self.capacity)
         self.logger = logger
 
@@ -37,7 +37,7 @@ class BaseProcessor:
     def work(self, job_id: str, duration: Optional[float] = None):
         """Simulate job processing inside processor."""
 
-        duration = duration if duration is not None else self.default_time
+        duration = duration if duration is not None else self.proc_time
         start_time = self.env.now
 
         self._log(job_id, f"Processing started ({duration:.1f} min)")

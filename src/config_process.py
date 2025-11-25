@@ -17,7 +17,7 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
     # Demand / Platform settings
     "demand": {
         # Order arrival pattern
-        "order_cycle_min": 1 * 24 * 60,
+        "order_cycle_min": 3 * 24 * 60,
 
         # Order size: patients and items per patient
         "num_patients_per_order_min": 1,
@@ -98,7 +98,7 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
         "servers": 2,
         "healing_time_per_platform_min": 120,
         "placement_time_per_platform_min": 10,
-        "support_time_per_platform_min": 30,
+        "support_generation_time_min": 30,
     },
 
     # Automated Post-processing (AMR + equipment)
@@ -198,7 +198,7 @@ HUMAN_PROC_DEFAULT: Dict[str, Any] = {
 
     # Manual finishing operations (support removal, finishing, painting)
     "manual_ops": {
-        "support_time_per_platform_min": 20,
+        "support_removal_time_min": 20,
         "support_time_per_part_min": 2,
         "finish_time_per_part_min": 2,
         "paint_time_per_part_min": 2,

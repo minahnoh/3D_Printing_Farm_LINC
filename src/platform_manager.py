@@ -34,15 +34,18 @@ class PlatformManager:
         self.job_to_platform: Dict[int, str] = {}
         self.platform_to_job: Dict[str, int] = {}
 
+        """
         if self.logger:
             self.logger.log_event("PlatformManager", f"Initialized with {self.initial_plat} platforms.")
-
+        """
 
     def get_clean_platform(self):
         """Return next available clean platform."""
+        
+        """"
         if self.logger:
             self.logger.log_event("PlatformManager", "Platform request issued. Waiting for availability...")
-
+        """
         return self.clean_platforms.get()
 
 
@@ -83,13 +86,13 @@ class PlatformManager:
         job_id = self.platform_to_job.pop(platform_id, None)
         if job_id is not None:
             self.job_to_platform.pop(job_id, None)
-
+        """
         if self.logger:
             self.logger.log_event(
                 "PlatformManager",
                 f"Platform {platform_id} released back to pool (previous job={job_id})"
             )
-
+        """
         return self.env.process(self._put_clean_platform(token))
 
 
@@ -97,8 +100,10 @@ class PlatformManager:
         """Internal helper: SimPy put operation."""
         yield self.clean_platforms.put(token)
 
+        """
         if self.logger:
             self.logger.log_event(
                 "PlatformManager",
                 f"Platform {token['id']} is now available again."
             )
+        """

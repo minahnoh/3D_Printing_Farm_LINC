@@ -1,4 +1,3 @@
-from typing import Optional
 import simpy
 from base_Processor import BaseProcessor
 

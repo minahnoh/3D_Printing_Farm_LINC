@@ -1,119 +1,121 @@
-# main_Process.py
-import simpy
 import random
+import simpy
+from typing import Optional
 from base_Customer import Item
 from base_Job import Job
-from base_Process import Process
-from base_Processor import Machine, Worker
-from log_SimPy import *
+from log_SimPy import Logger
+from manager import Manager
+from base_Customer import Customer
+from KPI import KPI
+from factory_platform import Factory
+from config_SimPy import (
+    SIM_TIME,
+    FACTORY_PLATFORM_CLEAN,
+    FACTORY_AUTO_POST,
+    FACTORY_PRINT,
+    FACTORY_MANUAL_OPS,
+    PALLET_SIZE_LIMIT,
+    NUM_ITEMS_PER_PATIENT
+)
 
 
-class SimpleLogger:
-    def __init__(self):
-        self.logs = []
 
-    def log_event(self, event_type, message):
-        """Log an event with a timestamp"""
-        current_time = env.now if 'env' in globals() else 0
-        days = int(current_time // (24 * 60))
-        hours = int((current_time % (24 * 60)) // 60)
-        minutes = int(current_time % 60)
-        timestamp = f"{days:02d}:{hours:02d}:{minutes:02d}"
-        total_minutes = int(current_time)
-        print(f"[{timestamp}] [{total_minutes}] | {event_type}: {message}")
-        self.logs.append((event_type, message))
+def build_caps_from_cfg() -> dict:
+    """
+    Build a resource capacity dictionary from configuration values.
 
+    This dictionary is later passed into KPI.to_dict() so that
+    utilization metrics can be calculated per resource.
+    """
+    print_cfg = FACTORY_PRINT
+    auto_cfg = FACTORY_AUTO_POST
+    plat_cfg = FACTORY_PLATFORM_CLEAN
+    manual_cfg = FACTORY_MANUAL_OPS
 
-def generate_jobs(num_jobs, items_per_job, job_id_start=1):
-    """Create test jobs"""
-    jobs = []
-    for i in range(num_jobs):
-        job_id = job_id_start + i
-        # Create virtual patient ID
-        patient_id = f"patient_{job_id}"
+    caps = {
+        "printers": print_cfg.get("printer_count"),
+        "wash_m1": auto_cfg.get("washers_m1"),
+        "wash_m2": auto_cfg.get("washers_m2"),
+        "dryers": auto_cfg.get("dryers"),
+        "uv_units": auto_cfg.get("uv_units"),
+        "amr": auto_cfg.get("amr_count"),
+        "platform_washers": plat_cfg.get("washers"),
+        "manual_workers": manual_cfg.get("workers")
+    }
 
-        # Item class requires (id_patient, id_item) two parameters. id_order is fixed at 0
-        items = [Item(0, patient_id, f"item_{job_id}_{j}")
-                 for j in range(items_per_job)]
-        job = Job(job_id, items)
-        jobs.append(job)
-    return jobs
+    return caps
 
 
-def run_process_validation():
-    """Process Class Validation Test Based on Integrated Interface"""
-    print("================ Process Class Validation Test Based on Integrated Interface ================")
+def run_process_pipeline_validation(sim_duration: Optional[int] = None):
+    """
+    Validation mode that uses the full demand logic instead of synthetically generating Jobs.
 
-    # Set up simulation environment
-    global env
+    This ensures:
+        - Orders are generated based on `order_cycle_min` in config.
+        - Jobs are created only by the Manager based on Order content.
+        - Only as many Jobs as demand produces are mapped to platforms.
+    """
+
+    print("================ Process Pipeline Validation (Factory) ================")
+
+    # 1) Create simulation environment
     env = simpy.Environment()
-    logger = SimpleLogger()
+    logger = Logger(env)
 
-    # Create basic processes (just 2)
-    process_a = Process("Process_A", env, logger)
-    process_b = Process("Process_B", env, logger)
+    # 2) Create Manager (this automatically creates Factory and KPI)
+    manager = Manager(env=env, logger=logger)
+    factory = manager.factory   # Just reference it (do NOT recreate Factory)
+    kpi: KPI = factory.kpi      # Shared KPI instance
 
-    # Register processors for each process
-    machine1 = Machine(1, "Process_A", f"Machine_A{1}", 30, 2)
-    process_a.register_processor(machine1)
-    machine2 = Machine(2, "Process_A", f"Machine_A{2}", 30, 1)
-    process_a.register_processor(machine2)
-    worker = Worker(1, f"Worker_B1", 15)
-    process_b.register_processor(worker)
+    # 3) Create Customer that generates Orders on a schedule
+    customer = Customer(env=env, order_receiver=manager, logger=logger)
 
-    # Set up process connections
-    process_a.connect_to_next_process(process_b)
+    # 4) Determine simulation duration
+    if sim_duration is None:
+        sim_duration = SIM_TIME
 
-    # Create test jobs and assign to first process
-    jobs = generate_jobs(4, 2)  # 4 jobs, 2 items each
-    print(f"\n{len(jobs)} test jobs created")
+    logger.log_event(
+        "VALIDATION",
+        f"Running sim with config-based order generation (order_cycle_min applied)."
+    )
 
-    for job in jobs:
-        print(f"Assigned job {job.id_job} to Process A")
-        process_a.add_to_queue(job)
+    print(f"\nStarting simulation for {sim_duration} minutes...")
+    env.run(until=sim_duration)
 
-    # Run simulation
-    print("\nStarting simulation...")
-    sim_duration = 500  # Test simulation duration (minutes)
-    env.process(run_until(env, sim_duration))
-    env.run(until=sim_duration)  # Explicitly add until parameter
-
-    # Check results
+    # 5) Reporting
     print("\n================ Simulation Results ================")
-    print(f"Process A completed jobs: {len(process_a.completed_jobs)}")
-    print(f"Process B completed jobs: {len(process_b.completed_jobs)}")
+    print(f"Total Jobs completed     : {kpi.finished_platforms}")
+    print(f"Total Jobs started       : {kpi.started_platforms}")
 
-    # Check job history by time
-    if process_b.completed_jobs:
-        print("\nProcessing time by process for completed jobs:")
-        for job in process_b.completed_jobs:
-            print(f"\nJob {job.id_job} history:")
-            for step in job.processing_history:
-                start_time = step['start_time']
-                end_time = step['end_time'] if step['end_time'] is not None else 'N/A'
-                duration = step['duration'] if step['duration'] is not None else 'N/A'
-                print(
-                    f"  {step['process']} ({step['resource_name']}): {start_time}min -> {end_time}min (duration: {duration}min)")
+    caps = build_caps_from_cfg()
+    kpi_dict = kpi.to_dict(horizon_min=sim_duration, caps=caps)
 
-    # Check queue length history
-    print("\nQueue length changes for each process:")
-    for proc, name in [(process_a, "Process A"), (process_b, "Process B")]:
-        if proc.job_store.queue_length_history:
-            print(f"\n{name} queue length changes:")
-            for time, length in proc.job_store.queue_length_history:
-                print(f"  Time {time}min: Queue length = {length}")
 
+    """
+    print("\nKPI Summary:")
+    for key, value in kpi_dict.items():
+        if key == "utilization":
+            print("  utilization:")
+            for rname, u in value.items():
+                if u is None:
+                    print(f"    - {rname}: None")
+                else:
+                    print(f"    - {rname}: {u:.3f}")
+        else:
+            print(f"  {key}: {value}")
+    """        
+    """
+    if logger:
+        logger.log_event(
+            "VALIDATION",
+            f"Validation complete: created={len(jobs)}, completed={kpi.finished_platforms}"
+        )
+    """
     print("\n================ Test Ended ================")
 
 
-def run_until(env, duration):
-    """Run simulation until specified time"""
-    yield env.timeout(duration)
-
-
 if __name__ == "__main__":
-    # Set random seed (for reproducible results)
     random.seed(42)
 
-    # Directly run generator function
-    run_process_validation()
+    # Run validation using config values only
+    run_process_pipeline_validation()
