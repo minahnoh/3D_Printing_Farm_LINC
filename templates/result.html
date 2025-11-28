@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Simulation Result</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+<style>
+body { font-family: Pretendard, sans-serif; margin:20px; }
+.box { border:1px solid #ccc; padding:15px; margin-bottom:25px; border-radius:6px; }
+.chart { width:100%; height:450px; }
+pre { background:#f4f4f4; padding:10px; max-height:300px; overflow:auto; }
+.notice { color:#666; font-size:13px; }
+</style>
+</head>
+
+<body>
+
+<h1>📊 시뮬레이션 결과</h1>
+<button onclick="window.location.href='/'">← 설정 페이지로</button>
+
+<hr>
+
+<div class="box">
+  <h2>1) KPI Summary</h2>
+  <div id="kpi"></div>
+</div>
+
+<div class="box">
+  <h2>2) Stacker WIP 변화 그래프</h2>
+  <div id="stacker_wip_chart" class="chart"></div>
+</div>
+
+<div class="box">
+  <h2>3) AMR 동선 Heatmap / Count</h2>
+  <div id="amr_heatmap" class="chart"></div>
+</div>
+
+<div class="box">
+  <h2>4) Scrap 발생 위치 / 빈도</h2>
+  <div id="scrap_chart" class="chart"></div>
+</div>
+
+<div class="box">
+  <h2>5) Raw JSON (디버깅용)</h2>
+  <pre id="raw_json"></pre>
+</div>
+
+<script>
+const sim = JSON.parse(localStorage.getItem("sim_result") || "null");
+
+if(!sim){
+  document.getElementById("raw_json").textContent = "localStorage.sim_result 가 없습니다. 먼저 시뮬레이션을 실행하세요.";
+} else {
+  document.getElementById("raw_json").textContent = JSON.stringify(sim, null, 2);
+}
+
+const result = sim && sim.result ? sim.result : {};
+
+// ==================== 1) KPI Summary ====================
+(function renderKPI(){
+  const kpiDiv = document.getElementById("kpi");
+  const kpi = result.kpi || result.KPI || {};
+
+  if(!kpi || Object.keys(kpi).length === 0){
+    kpiDiv.innerHTML = '<div class="notice">kpi 정보가 result.kpi 에 없습니다. (백엔드에서 kpi dict를 result.kpi로 넘겨주면 여기에 표시됩니다)</div>';
+    return;
+  }
+
+  let html = "<ul>";
+  for(const [k,v] of Object.entries(kpi)){
+    if(typeof v === "object") continue; // utilization 같은 nested dict는 여기선 스킵
+    html += `<li><b>${k}</b>: ${v}</li>`;
+  }
+  html += "</ul>";
+  kpiDiv.innerHTML = html;
+})();
+
+// ==================== 2) Stacker WIP Graph ====================
+(function renderStackerWIP(){
+  const div = document.getElementById("stacker_wip_chart");
+  const raw = result.stacker_wip_history || result.stackerWipHistory || null;
+
+  if(!raw || !Array.isArray(raw) || raw.length === 0){
+    div.innerHTML = '<div class="notice">stacker_wip_history 데이터가 없습니다. (result.stacker_wip_history 에 [ {t, wip}, ... ] 형식으로 넘겨주세요)</div>';
+    return;
+  }
+
+  const t = [];
+  const wip = [];
+  raw.forEach(d => {
+    if(Array.isArray(d)){
+      t.push(d[0]);
+      wip.push(d[1]);
+    }else if(typeof d === "object"){
+      t.push(d.t ?? d.time ?? 0);
+      wip.push(d.wip ?? d.value ?? 0);
+    }
+  });
+
+  const trace = {
+    x: t,
+    y: wip,
+    mode: "lines+markers",
+    name: "Stacker WIP"
+  };
+
+  Plotly.newPlot(div, [trace], {
+    title: "Stacker WIP over Time",
+    xaxis: { title: "Time (min)" },
+    yaxis: { title: "WIP (Platforms/Jobs)" }
+  });
+})();
+
+// ==================== 3) AMR Route Heatmap / Count ====================
+(function renderAMRHeatmap(){
+  const div = document.getElementById("amr_heatmap");
+  const counts = result.amr_route_counts || result.amrRouteCounts || result.amr_moves || null;
+
+  if(!counts || typeof counts !== "object" || Object.keys(counts).length === 0){
+    div.innerHTML = '<div class="notice">AMR 경로 카운트 데이터가 없습니다. (result.amr_route_counts = {"printer_to_wash1":12, ...} 형식으로 넘겨주세요)</div>';
+    return;
+  }
+
+  // route 명을 from / to 로 나누기 ("printer_to_wash1" → "printer", "wash1")
+  const fromSet = new Set();
+  const toSet = new Set();
+  const routeEntries = [];
+
+  for(const [route, cntRaw] of Object.entries(counts)){
+    const cnt = typeof cntRaw === "number" ? cntRaw : parseFloat(cntRaw) || 0;
+    let from = route;
+    let to = "";
+    if(route.includes("_to_")){
+      const parts = route.split("_to_");
+      from = parts[0];
+      to = parts[1];
+    }else if(route.includes("->")){
+      const parts = route.split("->");
+      from = parts[0];
+      to = parts[1];
+    }
+    fromSet.add(from);
+    toSet.add(to || "(unknown)");
+    routeEntries.push({from, to: to || "(unknown)", cnt});
+  }
+
+  const fromList = Array.from(fromSet);
+  const toList = Array.from(toSet);
+
+  // 2D matrix [from][to]
+  const z = fromList.map(() => toList.map(() => 0));
+  routeEntries.forEach(e => {
+    const i = fromList.indexOf(e.from);
+    const j = toList.indexOf(e.to);
+    if(i >= 0 && j >= 0){
+      z[i][j] = e.cnt;
+    }
+  });
+
+  const data = [{
+    z: z,
+    x: toList,
+    y: fromList,
+    type: "heatmap",
+    colorscale: "Viridis",
+    hoverongaps: false
+  }];
+
+  Plotly.newPlot(div, data, {
+    title: "AMR Route Count Heatmap (from → to)",
+    xaxis: { title: "To" },
+    yaxis: { title: "From" }
+  });
+})();
+
+// ==================== 4) Scrap by Stage Bar Chart ====================
+(function renderScrap(){
+  const div = document.getElementById("scrap_chart");
+  const scrap = result.scrap_by_stage || result.scrapByStage || null;
+
+  if(!scrap || typeof scrap !== "object" || Object.keys(scrap).length === 0){
+    div.innerHTML = '<div class="notice">Scrap 단계별 데이터가 없습니다. (result.scrap_by_stage = {"Print":10, "WashM1":3, ...} 형식으로 넘겨주세요)</div>';
+    return;
+  }
+
+  const stages = Object.keys(scrap);
+  const counts = stages.map(s => {
+    const v = scrap[s];
+    return typeof v === "number" ? v : parseFloat(v) || 0;
+  });
+
+  const trace = {
+    x: stages,
+    y: counts,
+    type: "bar"
+  };
+
+  Plotly.newPlot(div, [trace], {
+    title: "Scrap 발생 위치 / 빈도",
+    xaxis: { title: "Stage" },
+    yaxis: { title: "Scrap Count" }
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>3D Printing Smart Factory Simulation</title>
+<script>
+    async function runSimulation() {
+        const payload = collectFormData();
+        const res = await fetch("/run-simulation", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        localStorage.setItem("sim_result", JSON.stringify(data));
+        window.location.href = "/result";
+    }
+
+    function collectFormData() {
+        return {
+            demand: {
+                sim_duration_min: parseInt(document.getElementById("sim_duration").value),
+                order_cycle_min: parseInt(document.getElementById("order_cycle").value),
+                patients_min: parseInt(document.getElementById("patients_min").value),
+                patients_max: parseInt(document.getElementById("patients_max").value),
+                items_min: parseInt(document.getElementById("items_min").value),
+                items_max: parseInt(document.getElementById("items_max").value),
+                order_due_date: parseInt(document.getElementById("order_due").value || "0")
+            },
+            material: {
+                part_weight_g: parseFloat(document.getElementById("mat_weight").value || "0"),
+                resin_cost_per_kg: parseFloat(document.getElementById("mat_resin_cost").value || "0"),
+                pallet_size_limit: parseInt(document.getElementById("mat_pallet_limit").value || "0"),
+                initial_platforms: parseInt(document.getElementById("mat_initial_plat").value || "0")
+            },
+            printing: {
+                printer_count: parseInt(document.getElementById("print_cnt").value || "1"),
+                print_time_min: parseFloat(document.getElementById("print_time").value || "0"),
+                defect_rate: parseFloat(document.getElementById("print_defect").value || "0"),
+                breakdown_enabled: document.getElementById("print_breakdown") ? document.getElementById("print_breakdown").checked : false,
+                mtbf_min: parseFloat(document.getElementById("print_mtbf").value || "0"),
+                mttr_min: parseFloat(document.getElementById("print_mttr").value || "0"),
+                maintenance_cycle_h: parseFloat(document.getElementById("print_maint_cycle").value || "0"),
+                maintenance_duration_min: parseFloat(document.getElementById("print_maint_dur").value || "0")
+            },
+            preprocess: {
+                healing_time: parseFloat(document.getElementById("pre_heal").value || "0"),
+                placement_time: parseFloat(document.getElementById("pre_place").value || "0"),
+                support_time: parseFloat(document.getElementById("pre_support").value || "0"),
+                transfer_mode: document.getElementById("pre_transfer") ? document.getElementById("pre_transfer").value : "amr"
+            },
+            platform_clean: {
+                washer_count: parseInt(document.getElementById("plat_washer_cnt").value || "0"),
+                platform_clean_time: parseFloat(document.getElementById("plat_clean_time").value || "0")
+            },
+            auto_post_common: {
+                wash1_count: parseInt(document.getElementById("w1_cnt").value || "0"),
+                wash1_time: parseFloat(document.getElementById("w1_time").value || "0"),
+                wash2_count: parseInt(document.getElementById("w2_cnt").value || "0"),
+                wash2_time: parseFloat(document.getElementById("w2_time").value || "0"),
+                dry_count: parseInt(document.getElementById("dry_cnt").value || "0"),
+                dry_time: parseFloat(document.getElementById("dry_time").value || "0"),
+                uv_count: parseInt(document.getElementById("uv_cnt").value || "0"),
+                uv_time: parseFloat(document.getElementById("uv_time").value || "0"),
+                defect_wash1: parseFloat(document.getElementById("def_w1").value || "0"),
+                defect_wash2: parseFloat(document.getElementById("def_w2").value || "0"),
+                defect_dry: parseFloat(document.getElementById("def_dry").value || "0"),
+                defect_uv: parseFloat(document.getElementById("def_uv").value || "0")
+            },
+            auto_post_amr: {
+                amr_count: parseInt(document.getElementById("amr_cnt").value || "0"),
+                amr_speed: parseFloat(document.getElementById("amr_speed").value || "0"),
+                load_time: parseFloat(document.getElementById("amr_load").value || "0"),
+                unload_time: parseFloat(document.getElementById("amr_unload").value || "0"),
+                dist_printer_w1: parseFloat(document.getElementById("dist_pw1").value || "0"),
+                dist_w1_w2: parseFloat(document.getElementById("dist_w1w2").value || "0"),
+                dist_w2_dry: parseFloat(document.getElementById("dist_w2d").value || "0"),
+                dist_dry_uv: parseFloat(document.getElementById("dist_duv").value || "0"),
+                shift_enabled: document.getElementById("amr_shift") ? document.getElementById("amr_shift").checked : false
+            },
+            manual_transport: {
+                worker_count: parseInt(document.getElementById("man_cnt").value || "0"),
+                walk_speed: parseFloat(document.getElementById("man_speed").value || "0"),
+                dist_printer_w1: parseFloat(document.getElementById("man_pw1").value || "0"),
+                dist_w1_w2: parseFloat(document.getElementById("man_w1w2").value || "0"),
+                dist_w2_dry: parseFloat(document.getElementById("man_w2d").value || "0"),
+                dist_dry_uv: parseFloat(document.getElementById("man_duv").value || "0"),
+                shift_start: (document.getElementById("man_shift_s") || {}).value || "09:00",
+                shift_end: (document.getElementById("man_shift_e") || {}).value || "18:00",
+                workdays: parseInt((document.getElementById("man_workdays") || {value: "7"}).value || "7")
+            },
+            manual_post: {
+                support_remove_time: parseFloat(document.getElementById("mp_sup").value || "0"),
+                finish_time: parseFloat(document.getElementById("mp_finish").value || "0"),
+                paint_time: parseFloat(document.getElementById("mp_paint").value || "0"),
+                move_time: parseFloat(document.getElementById("mp_move").value || "0")
+            },
+            stacker: {
+                enabled: document.getElementById("stk_enabled") ? document.getElementById("stk_enabled").checked : true,
+                max_wip: parseInt(document.getElementById("stk_wip").value || "0"),
+                order_policy: document.getElementById("stk_policy") ? document.getElementById("stk_policy").value : "FIFO"
+            },
+            cost: {
+                labor_cost_hour: parseFloat(document.getElementById("cost_labor").value || "0"),
+                printer_price: parseFloat(document.getElementById("cost_printer").value || "0"),
+                washer_price: parseFloat(document.getElementById("cost_washer").value || "0"),
+                dryer_price: parseFloat(document.getElementById("cost_dryer").value || "0"),
+                uv_price: parseFloat(document.getElementById("cost_uv").value || "0"),
+                amr_price: parseFloat(document.getElementById("cost_amr").value || "0"),
+                depreciation_years: parseInt(document.getElementById("cost_dep").value || "5"),
+                overhead_month: parseFloat(document.getElementById("cost_over").value || "0")
+            }
+        };
+    }
+</script>
+
+<style>
+body { font-family: Pretendard, sans-serif; margin:20px; }
+.section { border:1px solid #ccc; padding:15px; margin-bottom:20px; border-radius:6px; }
+.row { display:flex; gap:10px; margin-bottom:8px; }
+.row label { width:240px; }
+input,select { padding:4px; }
+button { padding:10px 20px; background:#0066ff; color:white; border:none; border-radius:5px; cursor:pointer; }
+</style>
+</head>
+
+<body>
+<h1>3D Printing Smart Factory – Simulation Config</h1>
+
+<div class="section">
+<h2>테스트 예시 입력 (최소셋)</h2>
+<div class="row">
+    <label>시뮬레이션 기간(분):</label>
+    <input id="sim_duration" value="4320">
+</div>
+<div class="row">
+    <label>주문주기(분):</label>
+    <input id="order_cycle" value="120">
+</div>
+<div class="row">
+    <label>환자 범위 (min ~ max):</label>
+    <input id="patients_min" value="1"> ~ <input id="patients_max" value="3">
+</div>
+<div class="row">
+    <label>아이템 범위 (min ~ max):</label>
+    <input id="items_min" value="1"> ~ <input id="items_max" value="3">
+</div>
+</div>
+
+<button onclick="runSimulation()">시뮬레이션 실행</button>
+
+</body>
+</html>

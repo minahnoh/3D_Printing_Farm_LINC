@@ -72,7 +72,7 @@ POLICY_DISPATCH_FROM_QUEUE = "FIFO"
 
 # Platform cleaning (machine-based)
 FACTORY_PLATFORM_CLEAN = CFG["platform_clean"]
-NUM_PLATFORMS = FACTORY_PLATFORM_CLEAN.get("initial_platforms", 5)
+NUM_PLATFORMS = FACTORY_PLATFORM_CLEAN.get("initial_platforms")
 
 # Pre-processing before print
 FACTORY_PREPROC = CFG["preproc"]

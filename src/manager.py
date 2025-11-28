@@ -3,7 +3,7 @@ from base_Job import Job
 from base_Customer import OrderReceiver
 from config_SimPy import PALLET_SIZE_LIMIT, POLICY_ORDER_TO_JOB
 from factory_platform import Factory
-
+from config_SimPy import CFG
 
 class Manager(OrderReceiver):
     """
@@ -37,7 +37,8 @@ class Manager(OrderReceiver):
         self.completed_orders = []
 
         # Create the stage-based factory (wrapping PlatformManager + stages + KPI)
-        self.factory = Factory(env=self.env, logger=self.logger)
+        self.cfg = CFG
+        self.factory = Factory(env=self.env, cfg=self.cfg, logger=self.logger)
 
         if self.logger:
             self.logger.log_event(

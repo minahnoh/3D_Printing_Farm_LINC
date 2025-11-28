@@ -22,15 +22,15 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
         # Order size: patients and items per patient
         "num_patients_per_order_min": 1,
         "num_patients_per_order_max": 1,
-        "num_items_per_patient_min": 5,
-        "num_items_per_patient_max": 5,
+        "num_items_per_patient_min": 150,
+        "num_items_per_patient_max": 150,
 
         # Order due date
         "order_due_date_min": 7 * 24 * 60,
         "order_due_date_max": 7 * 24 * 60,
 
         # Job splitting & pallet policy
-        "pallet_size_limit": 5,                         # PALLET_SIZE_LIMIT
+        "pallet_size_limit": 50,                         # PALLET_SIZE_LIMIT
         "policy_order_to_job": "MAX_PER_JOB",           # POLICY_ORDER_TO_JOB
         "policy_num_defect_per_job": 3,                 # POLICY_NUM_DEFECT_PER_JOB
         "policy_reproc_seq_in_queue": "QUEUE_LAST",     # POLICY_REPROC_SEQ_IN_QUEUE
@@ -68,7 +68,7 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
  
     # Stacker capacity constraints
     "stacker_guard": {
-        "enabled": False,
+        "enabled": True,
         "max_platforms": 0,
     },
 }
@@ -91,6 +91,21 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
             {"name": f"PR-{i+1}", "platform_capacity": 90, "defect_rate": 0.08}
             for i in range(6)
         ],
+        
+        # Printer breakdown / maintenance
+        "breakdown": {
+            "enabled": True,          # 고장 모델링 on/off
+            "mtbf_min": 3 * 24 * 60,  # 평균 고장 간격 (분) 예: 3일
+            "mttr_min": 4 * 60,       # 평균 수리 시간 (분) 예: 4시간
+        },
+
+        "maintenance": {
+            "enabled": True,          # 정기 유지보수 on/off
+            "start_hhmm": "02:00",    # 매일 02:00에 시작
+            "duration_min": 60,       # 60분 동안 유지보수
+            "cycle_days": 1,          # 1일마다 반복 (7이면 주 1회)
+        },
+
     },
 
     # Pre-processing before printing (machine-based servers)
@@ -110,7 +125,8 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
 
         # Distances between processing stations
         "dist_m": {
-            "printer_to_wash": 10,
+            "printer_to_wash1": 10,
+            "wash1_to_wash2": 10,
             "wash_to_dry": 10,
             "dry_to_uv": 10,
             "uv_to_stacker": 10,
@@ -178,7 +194,7 @@ HUMAN_PROC_DEFAULT: Dict[str, Any] = {
         "speed_m_per_s": 0.1,
 
         "dist_m": {
-            "printer_to_wash": 10,
+            "printer_to_wash1": 10,
             "wash1_to_wash2": 10,
             "wash_to_dry": 10,
             "uv_to_stacker": 10,

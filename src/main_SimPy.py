@@ -109,7 +109,14 @@ def run_full_simulation(sim_duration: int = SIM_TIME):
         f"started_platforms={kpi.started_platforms}"
     )
 
+    if logger and hasattr(factory, "trace"):
+        logger.visualize_trace_gantt(factory.trace, title="Factory Trace Gantt")
+
     print("\n================ Full Simulation Finished ================")
+    print("[TRACE DEBUG] len(logger.trace_events) =", len(logger.trace_events))
+    if logger.trace_events:
+        logger.visualize_trace_gantt(logger.trace_events, title="Factory Trace Gantt")
+
 
 
 if __name__ == "__main__":
@@ -118,3 +125,4 @@ if __name__ == "__main__":
 
     # Run full factory simulation
     run_full_simulation(sim_duration=SIM_TIME)
+
