@@ -23,7 +23,7 @@ class Manager(OrderReceiver):
         next_job_id: Sequential counter for assigning unique job IDs.
         completed_orders: List of Orders that have finished all processing
         factory: Stage-based Factory instance that runs the full pipeline
-                 (Preprocess → Print → AutoPost → ManualPost → PlatformClean).
+                 (Preprocess → Print → PostProcessLine → ManualPost → PlatformClean).
     """
 
     def __init__(self, env, logger = None) :

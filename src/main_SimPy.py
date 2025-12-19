@@ -15,7 +15,7 @@ from config_SimPy import (
 
 
 def build_caps_from_cfg() -> dict:
-    """
+    """s
     Build a capacity dictionary used by KPI.to_dict()
     to compute resource utilizations.
 
@@ -44,7 +44,7 @@ def build_caps_from_cfg() -> dict:
     return caps
 
 
-def run_full_simulation(sim_duration: int = SIM_TIME):
+def run_full_simulation(sim_duration: int = SIM_TIME, show_gantt = False):
     """
     Run a full simulation with:
         Customer → Manager → Factory (stage-based).
@@ -109,14 +109,28 @@ def run_full_simulation(sim_duration: int = SIM_TIME):
         f"started_platforms={kpi.started_platforms}"
     )
 
-    if logger and hasattr(factory, "trace"):
-        logger.visualize_trace_gantt(factory.trace, title="Factory Trace Gantt")
+    if show_gantt:
+        # 구 factory.trace 방식 (필요하면 유지)
+        if logger and hasattr(factory, "trace") and getattr(factory, "trace", None):
+            logger.visualize_trace_gantt(factory.trace, title="Factory Trace Gantt (Factory.trace)")
+
+        # stage 기반 logger.trace_events 간트차트
+        if logger.trace_events:
+            logger.visualize_trace_gantt(logger.trace_events, title="Factory Trace Gantt (trace_events)")
 
     print("\n================ Full Simulation Finished ================")
-    print("[TRACE DEBUG] len(logger.trace_events) =", len(logger.trace_events))
-    if logger.trace_events:
-        logger.visualize_trace_gantt(logger.trace_events, title="Factory Trace Gantt")
 
+    # 여기서 결과를 dict로 반환 → app.py에서 그대로 JSON으로 내려줄 수 있음
+    result = {
+        "kpi":       kpi_dict,
+        "caps":      caps,
+        "trace_events": logger.trace_events,  # 프론트에서 간트차트 그릴 때 사용
+        # 필요하면 추가:
+        # "finished_platforms": kpi.finished_platforms,
+        # "started_platforms":  kpi.started_platforms,
+    }
+
+    return result
 
 
 if __name__ == "__main__":
@@ -124,5 +138,5 @@ if __name__ == "__main__":
     random.seed(42)
 
     # Run full factory simulation
-    run_full_simulation(sim_duration=SIM_TIME)
+    run_full_simulation(sim_duration=SIM_TIME, show_gantt=True)
 

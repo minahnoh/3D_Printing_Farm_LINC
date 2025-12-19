@@ -69,6 +69,7 @@ class PlatformManager:
         self.job_to_platform[job_id] = platform_id
         self.platform_to_job[platform_id] = job_id
 
+        ## Debugging
         if self.logger:
             self.logger.log_event(
                 "PlatformManager",
@@ -100,6 +101,7 @@ class PlatformManager:
         """Internal helper: SimPy put operation."""
         yield self.clean_platforms.put(token)
 
+        ## Debugging
         """
         if self.logger:
             self.logger.log_event(

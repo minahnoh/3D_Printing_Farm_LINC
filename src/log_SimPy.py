@@ -27,7 +27,7 @@ class Logger:
 
             # 나중에 분석을 위해 로그 저장
             self.event_logs.append((current_time, event_type, message))
-
+    
     def collect_statistics(self, processes):
         """Collect statistics from the simulation
 
@@ -53,6 +53,8 @@ class Logger:
         completed_jobs = []
         for proc in available_processes:
             completed_jobs.extend(proc.completed_jobs)
+        
+        completed_jobs = sorted(completed_jobs, key=lambda j: j.id_job)
 
         # Remove duplicates by job ID
         unique_jobs = {}
@@ -558,12 +560,6 @@ class Logger:
 
         df = pd.DataFrame(trace)
 
-        # 필수 컬럼 존재 여부
-        required_cols = {"stage", "t0", "t1"}
-        if not required_cols.issubset(df.columns):
-            print(f"[Logger] trace 에 필요한 컬럼이 없습니다: {required_cols - set(df.columns)}")
-            return None
-
         # 시간/지속시간 계산
         df["Start"] = df["t0"].astype(float)
         df["Finish"] = df["t1"].astype(float)
@@ -584,10 +580,7 @@ class Logger:
         df["Stage"] = df["stage"].astype(str)
         df["Platform"] = df.get("platform_id", "")
 
-        # ─────────────────────────────────────────
         # 1) Stage별 서버 용량(capacity) 설정
-        #    (정확히 몇 대인지는 config에서 가져옴)
-        # ─────────────────────────────────────────
         stage_caps = {
             "Printer":        int(FACTORY_PRINT.get("printer_count", 1) or 1),
             "WashM1":         int(FACTORY_AUTO_POST.get("washers_m1", 1) or 1),
@@ -595,6 +588,7 @@ class Logger:
             "Dryer":          int(FACTORY_AUTO_POST.get("dryers", 1) or 1),
             "UV":             int(FACTORY_AUTO_POST.get("uv_units", 0) or 0),
             "AMRPool":        int(FACTORY_AUTO_POST.get("amr_count", 0) or 0),
+            "ManualMove":     int(FACTORY_MANUAL_MOVE.get("workers", 1) or 1),
             "Worker":         int(FACTORY_MANUAL_OPS.get("workers", 1) or 1),
             "PlatformWasher": int(FACTORY_PLATFORM_CLEAN.get("washers", 1) or 1),
         }
@@ -607,13 +601,12 @@ class Logger:
             "Dryer",
             "UV",
             "AMRPool",
+            "ManualMove",
             "Worker",
             "PlatformWasher",
         ]
 
-        # ─────────────────────────────────────────
         # 2) Stage별 slot 배정해서 Resource 컬럼 만들기
-        # ─────────────────────────────────────────
         df["Resource"] = None
         resource_names = []
 

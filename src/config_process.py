@@ -22,15 +22,15 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
         # Order size: patients and items per patient
         "num_patients_per_order_min": 1,
         "num_patients_per_order_max": 1,
-        "num_items_per_patient_min": 150,
-        "num_items_per_patient_max": 150,
+        "num_items_per_patient_min": 50,
+        "num_items_per_patient_max": 50,
 
         # Order due date
         "order_due_date_min": 7 * 24 * 60,
         "order_due_date_max": 7 * 24 * 60,
 
         # Job splitting & pallet policy
-        "pallet_size_limit": 50,                         # PALLET_SIZE_LIMIT
+        "pallet_size_limit": 50,                        # PALLET_SIZE_LIMIT
         "policy_order_to_job": "MAX_PER_JOB",           # POLICY_ORDER_TO_JOB
         "policy_num_defect_per_job": 3,                 # POLICY_NUM_DEFECT_PER_JOB
         "policy_reproc_seq_in_queue": "QUEUE_LAST",     # POLICY_REPROC_SEQ_IN_QUEUE
@@ -71,6 +71,10 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
         "enabled": True,
         "max_platforms": 0,
     },
+
+    # "automated": AMR Transport (24/7)
+    # "manual": Manual Transport (Shift-based)
+    "flow_mode": "manual", #default : "automated"
 }
 
 
@@ -79,10 +83,10 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
 
     # 3D Printing process parameters
     "print": {
-        "t_print_per_platform_min": 1_400,  # Total print time per platform
+        "t_print_per_platform_min": 1400,  # Total print time per platform
         "max_parts_per_platform": 90,
-        "printer_count": 6,
-        "defect_rate": 0.08,
+        "printer_count": 2,
+        "defect_rate": 0.0,
         "install_parallel": True,
         "install_time_min": 40,
 
@@ -94,16 +98,16 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
         
         # Printer breakdown / maintenance
         "breakdown": {
-            "enabled": True,          # 고장 모델링 on/off
-            "mtbf_min": 3 * 24 * 60,  # 평균 고장 간격 (분) 예: 3일
-            "mttr_min": 4 * 60,       # 평균 수리 시간 (분) 예: 4시간
+            "enabled": False,          # breakdown on:True / off:False
+            "mtbf_min": 3 * 24 * 60,  # mean time breakdown failure
+            "mttr_min": 4 * 60,       # mean time to repair (min)
         },
 
         "maintenance": {
-            "enabled": True,          # 정기 유지보수 on/off
-            "start_hhmm": "02:00",    # 매일 02:00에 시작
-            "duration_min": 60,       # 60분 동안 유지보수
-            "cycle_days": 1,          # 1일마다 반복 (7이면 주 1회)
+            "enabled": False,          # maintenance on/off
+            "start_hhmm": "02:00",    # start time
+            "duration_min": 60,       # maintenance duration time
+            "cycle_days": 1,          
         },
 
     },
@@ -119,7 +123,7 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
     # Automated Post-processing (AMR + equipment)
     "auto_post": {
         "amr_count": 2,
-        "amr_speed_m_per_s": 0.1,
+        "amr_speed_m_per_s": 1/60, # 0.1
         "amr_load_min": 20,
         "amr_unload_min": 20,
 
@@ -148,9 +152,9 @@ MACHINE_PROC_DEFAULT: Dict[str, Any] = {
         "t_platform_remove_min": 20,
 
         # Process-specific defect rates
-        "defect_rate_wash": 0.005,
-        "defect_rate_dry": 0.001,
-        "defect_rate_uv": 0.0,
+        "defect_rate_wash": 0.005,  # 0.005 
+        "defect_rate_dry": 0.0,     # 0.0
+        "defect_rate_uv": 0.0,      # 0.0
     },
 
     # Platform cleaning process (machine-based)
@@ -182,7 +186,7 @@ HUMAN_PROC_DEFAULT: Dict[str, Any] = {
         "to_newplatform_travel_min": 10,
         "t_uv_min": 30,
 
-        # If you want to model manual quality impact separately, keep these 0
+        # defect rate per process
         "defect_rate_wash": 0.0,
         "defect_rate_dry": 0.0,
         "defect_rate_uv": 0.0,
@@ -231,7 +235,7 @@ HUMAN_PROC_DEFAULT: Dict[str, Any] = {
             "workdays_per_cycle": 5,
         },
 
-        "workers": 12,
+        "workers": 3,
     },
 }
 

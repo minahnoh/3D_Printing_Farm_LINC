@@ -195,7 +195,7 @@ pre { background:#f4f4f4; padding:10px; max-height:300px; overflow:auto; }
 
 <body>
 
-<h1>📊 시뮬레이션 결과</h1>
+<h1> 시뮬레이션 결과</h1>
 <button onclick="window.location.href='/'">← 설정 페이지로</button>
 
 <hr>
@@ -223,6 +223,14 @@ pre { background:#f4f4f4; padding:10px; max-height:300px; overflow:auto; }
 <div class="box">
   <h2>5) Raw JSON (디버깅용)</h2>
   <pre id="raw_json"></pre>
+</div>
+
+<div class="box">
+  <h2>6) Factory Gantt Chart (trace_events 기반)</h2>
+  <div id="gantt_chart" class="chart"></div>
+  <div class="notice">
+    result.trace_events 에 기록된 Printer / Wash / Dry / UV / AMR / Worker 사용시간을 자원별 타임라인으로 시각화합니다.
+  </div>
 </div>
 
 <script>
@@ -297,7 +305,7 @@ const result = sim && sim.result ? sim.result : {};
   const counts = result.amr_route_counts || result.amrRouteCounts || result.amr_moves || null;
 
   if(!counts || typeof counts !== "object" || Object.keys(counts).length === 0){
-    div.innerHTML = '<div class="notice">AMR 경로 카운트 데이터가 없습니다. (result.amr_route_counts = {\"printer_to_wash1\":12, ...} 형식으로 넘겨주세요)</div>';
+    div.innerHTML = '<div class="notice">AMR 경로 카운트 데이터가 없습니다. (result.amr_route_counts = {"printer_to_wash1":12, ...} 형식으로 넘겨주세요)</div>';
     return;
   }
 
@@ -359,7 +367,7 @@ const result = sim && sim.result ? sim.result : {};
   const scrap = result.scrap_by_stage || result.scrapByStage || null;
 
   if(!scrap || typeof scrap !== "object" || Object.keys(scrap).length === 0){
-    div.innerHTML = '<div class="notice">Scrap 단계별 데이터가 없습니다. (result.scrap_by_stage = {\"Print\":10, \"WashM1\":3, ...} 형식으로 넘겨주세요)</div>';
+    div.innerHTML = '<div class="notice">Scrap 단계별 데이터가 없습니다. (result.scrap_by_stage = {"Print":10, "WashM1":3, ...} 형식으로 넘겨주세요)</div>';
     return;
   }
 
@@ -380,6 +388,78 @@ const result = sim && sim.result ? sim.result : {};
     xaxis: { title: "Stage" },
     yaxis: { title: "Scrap Count" }
   });
+})();
+
+// ==================== 6) Factory Gantt Chart (trace_events) ====================
+(function renderGantt(){
+  const div = document.getElementById("gantt_chart");
+  if(!div) return;
+
+  const traceEvents = result.trace_events || result.traceEvents || null;
+
+  if(!traceEvents || !Array.isArray(traceEvents) || traceEvents.length === 0){
+    div.innerHTML = '<div class="notice">trace_events 데이터가 없습니다. (백엔드에서 result.trace_events = [{Resource, t0, t1, stage, id}, ...] 형식으로 넘겨주세요)</div>';
+    return;
+  }
+
+  // 자원(Resource) 목록 추출
+  const resources = Array.from(
+    new Set(
+      traceEvents.map(ev => ev.Resource || ev.stage || "Unknown")
+    )
+  );
+
+  const data = [];
+
+  // 자원(Resource)별로 하나의 trace (수평 bar) 생성
+  resources.forEach(res => {
+    const evs = traceEvents.filter(ev => (ev.Resource || ev.stage || "Unknown") === res);
+
+    const x = [];      // duration (t1 - t0)
+    const base = [];   // 시작 시간 t0
+    const y = [];      // y축은 전부 같은 자원 이름
+    const text = [];   // hover text
+
+    evs.forEach(ev => {
+      const t0 = parseFloat(ev.t0 || 0);
+      const t1 = parseFloat(ev.t1 || 0);
+      const dur = Math.max(t1 - t0, 0.001); // 0 길이 방지
+
+      x.push(dur);
+      base.push(t0);
+      y.push(res);
+      const jobId = ev.id || ev.job_id || "";
+      const stage = ev.stage || "";
+      text.push(`${res} | ${stage} | ${jobId} (t=${t0.toFixed(1)}~${t1.toFixed(1)})`);
+    });
+
+    data.push({
+      type: "bar",
+      orientation: "h",
+      x: x,
+      y: y,
+      base: base,
+      name: res,
+      hovertext: text,
+      hoverinfo: "text"
+    });
+  });
+
+  const layout = {
+    title: "Factory Resource Gantt (Timeline)",
+    barmode: "stack",
+    xaxis: {
+      title: "Time (min)",
+      rangemode: "nonnegative"
+    },
+    yaxis: {
+      title: "Resource",
+      automargin: true
+    },
+    margin: {l: 120, r: 20, t: 40, b: 40}
+  };
+
+  Plotly.newPlot(div, data, layout);
 })();
 </script>
 
@@ -436,17 +516,22 @@ async def result_page():
 async def run_simulation(config: SimulationFullConfig):
     """
     Web에서 설정받은 config는 일단 로그로 찍어두고,
-    현재는 main_SimPy.run_full_simulation()을 그대로 호출해서 result에 넣음.
-    나중에 run_full_simulation이 dict를 리턴하도록 확장하면
-    result 안에 stacker_wip_history / amr_route_counts / scrap_by_stage를 포함시킬 수 있음.
+    main_SimPy.run_full_simulation()을 호출해서 result에 넣음.
+    run_full_simulation은 dict(result) 를 리턴해야
+    프론트에서 KPI / trace_events 등을 사용할 수 있음.
     """
     print("\n[WEB] Config Received:")
     print(json.dumps(config.dict(), indent=2, ensure_ascii=False))
 
     try:
         from main_SimPy import run_full_simulation
-        # 현재 구현은 보통 None을 리턴할 가능성이 높음 → 프론트는 그걸 그대로 Raw JSON에 보여줌
-        result = run_full_simulation()
+
+        # 프론트에서 받은 시뮬레이션 시간 사용
+        sim_time = int(config.demand.get("sim_duration_min", 4320) or 4320)
+
+        # 웹에서는 matplotlib 팝업 안 띄우고 데이터만 반환
+        result = run_full_simulation(sim_duration=sim_time, show_gantt=False)
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

@@ -70,3 +70,17 @@ class WorkShiftManager:
         while not self.active(int(self.env.now)):
             wait = self.time_to_next_start(int(self.env.now))
             yield self.env.timeout(wait)
+
+    def remaining_work_minutes(self, now: int) -> int:
+        if not self.active(now):
+            return 0
+
+        day_min = now % self.MIN_PER_DAY
+
+        if self.start <= self.end:  # 09:00~18:00
+            return max(0, self.end - day_min)
+        else:  # 야간근무
+            if day_min >= self.start:
+                return (self.MIN_PER_DAY - day_min) + self.end
+            else:
+                return self.end - day_min

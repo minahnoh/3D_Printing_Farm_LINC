@@ -1,8 +1,8 @@
 import simpy
 import random
 from typing import Any, Dict
-from specialized_Processor import (Printer, WashM1, WashM2, Dryer, UVStation, Worker, PlatformWasher, AMR)
-from flow_utils import (amr_travel_time_min, sample_stage_defects, build_stacker_payload, manual_travel_time_min,)
+from specialized_Processor import Printer, WashM1, WashM2, Dryer, UVStation, Worker, PlatformWasher, AMR
+from flow_utils import sample_stage_defects, build_stacker_payload, manual_travel_time_min
 from platform_manager import PlatformManager
 from KPI import KPI
 from base_Job import Job
@@ -86,9 +86,9 @@ class Preprocess:
                     (
                         f"[END] Job {job.id_job} ← Platform {platform_id} | "
                         f"preprocessing_total_time: {t} min "
-                        f"(healing={self.cfg['healing_time_per_platform_min']} min, "
-                        f"placement={self.cfg['placement_time_per_platform_min']} min, "
-                        f"support_gen={self.cfg['support_generation_time_min']} min)"
+                        # f"(healing={self.cfg['healing_time_per_platform_min']} min, "
+                        # f"placement={self.cfg['placement_time_per_platform_min']} min, "
+                        # f"support_gen={self.cfg['support_generation_time_min']} min)"
                     ),
                 )
 
@@ -109,19 +109,20 @@ class Print:
         # Slot usage records for Gantt (Printer_1, Printer_2, ...)
         self._printer_slots: Dict[int, list] = {}
 
-       
+        self.defect_rate = float(cfg.get("defect_rate"))
+
         # Breakdown / Maintenance config
-        bd_cfg = cfg.get("breakdown", {})
-        mt_cfg = cfg.get("maintenance", {})
+        bd_cfg = cfg.get("breakdown")
+        mt_cfg = cfg.get("maintenance")
 
-        self.breakdown_enabled = bool(bd_cfg.get("enabled", False))
-        self.mtbf_min = float(bd_cfg.get("mtbf_min", 0.0) or 0.0)
-        self.mttr_min = float(bd_cfg.get("mttr_min", 0.0) or 0.0)
+        self.breakdown_enabled = bool(bd_cfg.get("enabled"))
+        self.mtbf_min = float(bd_cfg.get("mtbf_min"))
+        self.mttr_min = float(bd_cfg.get("mttr_min"))
 
-        self.maint_enabled = bool(mt_cfg.get("enabled", False))
-        self.maint_start_hhmm = mt_cfg.get("start_hhmm", "00:00")
-        self.maint_duration_min = float(mt_cfg.get("duration_min", 0.0) or 0.0)
-        self.maint_cycle_days = int(mt_cfg.get("cycle_days", 1) or 1)
+        self.maint_enabled = bool(mt_cfg.get("enabled"))
+        self.maint_start_hhmm = mt_cfg.get("start_hhmm")
+        self.maint_duration_min = float(mt_cfg.get("duration_min"))
+        self.maint_cycle_days = int(mt_cfg.get("cycle_days"))
 
         # State flags
         self._is_breakdown = False
@@ -138,10 +139,6 @@ class Print:
         """Return True if printer bank is down due to breakdown or maintenance."""
         return self._is_breakdown or self._is_maintenance
 
-    def _log(self, msg: str):
-        if self.logger:
-            self.logger.log_event("Printer", msg)
-
     def _random_breakdown_process(self):
         """
         Simple random breakdown model for the whole printer bank:
@@ -154,19 +151,33 @@ class Print:
             # Wait until next breakdown
             if self.mtbf_min <= 0:
                 return
-            ttf = random.expovariate(1.0 / self.mtbf_min)
+            ttf = random.expovariate(1.0 / self.mtbf_min) # time to failure
             yield self.env.timeout(ttf)
 
             # Breakdown start
             self._is_breakdown = True
-            self._log(f"BREAKDOWN start (MTTR={self.mttr_min:.1f} min)")
+
+            ## Debugging
+            """
+            if self.logger:
+                self.logger.log_event(
+                    "PRINT",
+                    f"BREAKDOWN start (MTTR={self.mttr_min:.1f} min)")
+            """
 
             # Repair time
             yield self.env.timeout(self.mttr_min)
 
             # Breakdown end
             self._is_breakdown = False
-            self._log("BREAKDOWN end (printer back to service)")
+            
+            ## Debugging
+            """
+            if self.logger:
+                self.logger.log_event(
+                    "PRINT",
+                    "BREAKDOWN end (printer back to service)")
+            """
 
     def _hhmm_to_min(self, hhmm: str) -> int:
         """Convert 'HH:MM' string to minutes since day start."""
@@ -202,17 +213,31 @@ class Print:
 
             # Maintenance start
             self._is_maintenance = True
-            self._log(
-                f"MAINTENANCE start at t={self.env.now:.1f} "
-                f"(duration={self.maint_duration_min:.1f} min)"
-            )
+
+            ## Debugging
+            """
+            if self.logger:
+                self.logger.log_event(
+                    "PRINT",
+                    f"MAINTENANCE start at t={self.env.now:.1f} "
+                    f"(duration={self.maint_duration_min:.1f} min)"
+                )
+            """
 
             # Maintenance duration
             yield self.env.timeout(self.maint_duration_min)
 
             # Maintenance end
             self._is_maintenance = False
-            self._log(f"MAINTENANCE end at t={self.env.now:.1f}")
+
+            ## Debugging
+            """
+            if self.logger:
+                self.logger.log_event( 
+                            "PRINT",
+                            f"MAINTENANCE end at t={self.env.now:.1f}"
+                            )
+            """
 
     def _record_trace(self, t0: float, t1: float, job: Job):
         """Record printer usage interval into logger.trace_events."""
@@ -237,12 +262,18 @@ class Print:
 
     def run(self, job: Job):
         # If printer is currently down, wait until it becomes available
+
+        ## Debugging
+        platform_id = getattr(job, "platform_id", f"JOB-{job.id_job}")
+        n_parts = len(job.list_items)
+
+        """
         if self.logger and self._is_down():
             self.logger.log_event(
                 "PRINT",
                 f"Job {job.id_job} waiting: printer DOWN (breakdown/maintenance)"
             )
-
+        """
         while self._is_down():
             # Poll every 10 minutes
             yield self.env.timeout(10.0)
@@ -266,22 +297,66 @@ class Print:
             self.kpi.printer_busy_min += t
             self.kpi.n_print_jobs += 1
 
+            ## Debugging
             if self.logger:
                 self.logger.log_event(
                     "PRINT",
-                    f"[START] Job {job.id_job} | Platform {getattr(job, 'platform_id', '?')} | "
+                    f"[START] Job {job.id_job} | Platform {getattr(job, 'platform_id', None)} | "
                     f"print_time={t:.1f} min"
                 )
-
+        
             yield self.env.timeout(t)
             end = self.env.now
 
             if self.logger:
                 self.logger.log_event(
                     "PRINT",
-                    f"[END] Job {job.id_job} | Platform {getattr(job, 'platform_id', '?')} | "
+                    f"[END] Job {job.id_job} | Platform {getattr(job, 'platform_id', None)} | "
                     f"print_finished (elapsed={end-start:.1f} min)"
                 )
+
+            scrapped = 0
+
+            if n_parts > 0 and self.defect_rate > 0.0:
+                # Factory에서처럼 Bernoulli(플랫폼 전체)로 판단
+                if random.random() < self.defect_rate:
+                    # 이 플랫폼에 올라간 모든 부품 스크랩
+                    scrapped = n_parts
+                    self.kpi.scrapped_parts += scrapped
+
+                    job.is_scrapped_job = True
+                    job.scrap_stage = "print"
+
+                    # Job에 상태 플래그/정보 기록
+                    job.is_scrapped_in_print = True      # 플랫폼 전체 불량
+                    job.print_n_parts = n_parts          # 프린트에 올라갔던 부품 수
+                    job.print_good_parts = 0             # 프린트 이후 양품 0
+                    job.scrapped_in_print = scrapped     # 프린트에서 스크랩된 개수
+
+                    if hasattr(job, "list_items") and job.list_items is not None:
+                        job.list_items = []
+
+                    if self.logger:
+                        self.logger.log_event(
+                            "PRINT",
+                            (
+                                f"[SCRAP] Job {job.id_job} | Platform {platform_id} | "
+                                f"defect_rate={self.defect_rate:.4f}, "
+                                f"n_parts={n_parts}, scrapped_in_print={scrapped}"
+                            ),
+                        )
+                else:
+                    # 불량 안 난 정상 플랫폼
+                    job.is_scrapped_in_print = False
+                    job.print_n_parts = n_parts
+                    job.print_good_parts = n_parts
+                    job.scrapped_in_print = 0
+            else:
+                # 부품 수가 0이거나 defect_rate=0인 경우 기본값만 세팅
+                job.is_scrapped_in_print = False
+                job.print_n_parts = n_parts
+                job.print_good_parts = n_parts
+                job.scrapped_in_print = 0
 
             # Gantt trace
             if self.logger and hasattr(self.logger, "trace_events"):
@@ -300,38 +375,49 @@ class Print:
                 }
                 self.logger.trace_events.append(rec)
 
-                print("[TRACE DEBUG] Print.run appended:", rec)
+                # print("[TRACE DEBUG] Print.run appended:", rec)
             else:
+                """
                 print("[TRACE DEBUG] Print.run: logger or trace_events missing",
                       self.logger, hasattr(self.logger, "trace_events"))
+                """
 
 
-# 3. AutoPost (WashM1, WashM2, Dryer, UV, AMRPool)
-class AutoPost:
+# 3. PostProcessLine (WashM1, WashM2, Dryer, UV, AMRPool OR Human Movers)
+class PostProcessLine:
     """
-    Automatic post-processing stage:
-      - AMR travel between stations
-      - Wash1 / Wash2 / Dry / UV processing
-      - Defect / scrap sampling per stage
-      - Push payload to stacker (for manual post-process)
+    Post-processing line (des_factory_web style):
+
+    - flow_mode == "automated": AMR moves between stations (24/7)
+    - flow_mode == "manual":    Human movers carry platforms between stations (SHIFT-GATED for 이동/언로드)
+    - Machines (Wash1/Wash2/Dry/UV) run continuously once started (no shift gating on processing)
+
+    - Defect policy: stage-level Bernoulli => FULL scrap & STOP immediately
+      (fail gates at Wash1 / Dry / UV only; Wash2 has no defect gate)
+    - On success: push payload to stacker so ManualOps can process support/finish/paint
     """
 
-    def __init__(
-        self,
-        env,
-        cfg,
-        kpi: KPI,
-        logger=None,
-        amr_pool: AMR = None,
-        stacker=None,
-        shift_amr=None,
-    ):
+    def __init__(self, env, cfg, kpi: "KPI", logger=None, amr_pool: "AMR" = None, stacker=None, shift_move=None):
+
         self.env = env
-        self.cfg = cfg["auto_post"]
         self.kpi = kpi
         self.logger = logger
+        self.stacker = stacker
 
-        # Machines
+        # flow_mode 선택
+        # - cfg["flow_mode"] in {"automated","manual"}
+        self.flow_mode = str(cfg.get("flow_mode", "automated")).lower().strip()
+        if self.flow_mode not in ("automated", "manual"):
+            self.flow_mode = "automated"
+
+        # auto_post = 공통 설비/AMR 파라미터 (automated 모드)
+        self.cfg = cfg["auto_post"]
+
+        # manual_move / manual_post = manual 모드 이동/언로드 시간 파라미터
+        self.manual_move_cfg = cfg.get("manual_move", {})
+        self.manual_post_cfg = cfg.get("manual_post", {})
+
+        # Machines (same)
         self.m1 = WashM1(env, self.cfg["washers_m1"], self.cfg["t_wash1_min"])
         self.m2 = WashM2(env, self.cfg["washers_m2"], self.cfg["t_wash2_min"])
         self.dry = Dryer(env, self.cfg["dryers"], self.cfg["t_dry_min"])
@@ -343,11 +429,10 @@ class AutoPost:
         self._slots_dry: Dict[int, list] = {}
         self._slots_uv: Dict[int, list] = {}
         self._slots_amr: Dict[int, list] = {}
+        self._slots_mover: Dict[int, list] = {}  # NEW (manual mover)
 
-        # AMR / stacker / shift
+        # AMR
         self.amr_pool = amr_pool
-        self.stacker = stacker
-        self.shift_amr = shift_amr
 
         # AMR parameters
         self.dist = self.cfg["dist_m"]
@@ -355,19 +440,35 @@ class AutoPost:
         self.load_min = self.cfg["amr_load_min"]
         self.unload_min = self.cfg["amr_unload_min"]
 
-        # Defect rate per stage
-        self.def_wash = self.cfg.get("defect_rate_wash", 0.0)
-        self.def_dry = self.cfg.get("defect_rate_dry", 0.0)
-        self.def_uv = self.cfg.get("defect_rate_uv", 0.0)
+        # Defect rate per stage (des_factory_web style full-scrap gates)
+        self.def_wash = self.cfg.get("defect_rate_wash")
+        self.def_dry = self.cfg.get("defect_rate_dry")
+        self.def_uv = self.cfg.get("defect_rate_uv")
 
         # Stacker guard config
         guard_cfg = cfg.get("stacker_guard", {})
         self.stacker_guard_enabled = bool(guard_cfg.get("enabled", False))
         self.stacker_guard_limit = int(guard_cfg.get("max_platforms", 0) or 0)
 
-    # Gantt trace helpers
-    def _record_trace_stage(self, stage_name: str, t0: float, t1: float, job: Job):
-        """Record intervals for WashM1 / WashM2 / Dryer / UV."""
+        # manual mover resource + shift
+        self.shift_move = shift_move
+
+        # manual movers (capacity = manual_move["workers"])
+        movers_cap = int(self.manual_move_cfg.get("workers", 0) or 0)
+        self.movers = Worker(env, movers_cap if movers_cap > 0 else 1, 0)  # fallback 1
+
+        self.manual_speed_m_per_s = float(self.manual_move_cfg.get("speed_m_per_s", 0.1) or 0.1)
+        self.manual_dist = self.manual_move_cfg.get("dist_m", {})
+
+        # manual_post 언로드/이동 override(분)
+        self.human_unload_min = float(self.manual_post_cfg.get("human_unload_min", 0.0) or 0.0)
+        self.to_washer_travel_min = self.manual_post_cfg.get("to_washer_travel_min")
+        self.to_wash2_travel_min = self.manual_post_cfg.get("to_wash2_travel_min")
+        self.to_dryer_travel_min = self.manual_post_cfg.get("to_dryer_travel_min")
+        self.to_stacker_travel_min = self.manual_post_cfg.get("to_stacker_travel_min")
+
+    # Trace helpers
+    def _record_trace_stage(self, stage_name: str, t0: float, t1: float, job: "Job"):
         if not self.logger or not hasattr(self.logger, "trace_events"):
             return
 
@@ -401,8 +502,7 @@ class AutoPost:
             }
         )
 
-    def _record_trace_amr(self, t0: float, t1: float, job: Job):
-        """Record AMRPool travel intervals."""
+    def _record_trace_amr(self, t0: float, t1: float, job: "Job"):
         if not self.logger or not hasattr(self.logger, "trace_events"):
             return
         if self.amr_pool is None:
@@ -424,265 +524,495 @@ class AutoPost:
             }
         )
 
-    # AMR travel
-    def _amr_move(self, from_to_key: str, job: Job = None):
-        """
-        AMR travel between stations + trace recording.
-        """
-        if self.amr_pool is None:
-            return self.env.timeout(0)
+    def _record_trace_mover(self, t0: float, t1: float, job: "Job"):
+        if not self.logger or not hasattr(self.logger, "trace_events"):
+            return
 
-        dist_m = self.dist[from_to_key]
-        t_move = amr_travel_time_min(
-            dist_m,
-            self.speed_m_per_s,
-            load_min=self.load_min,
-            unload_min=self.unload_min,
+        cap = getattr(self.movers.resource, "capacity", 1)
+        slot_idx = _allocate_slot(self._slots_mover, cap, t0, t1)
+        res_name = f"ManualMover_{slot_idx}"
+
+        self.logger.trace_events.append(
+            {
+                "id": f"Job {job.id_job}",
+                "job_id": job.id_job,
+                "platform_id": getattr(job, "platform_id", None),
+                "stage": "ManualMove",
+                "Resource": res_name,
+                "t0": float(t0),
+                "t1": float(t1),
+            }
         )
 
-        self.kpi.amr_travel_min += t_move
+    # Guard
+    def _stacker_guard_wait(self):
+        while True:
+            if (not self.stacker_guard_enabled) or (self.stacker_guard_limit <= 0):
+                return
+            if self.stacker is None:
+                return
+            if len(self.stacker.items) < self.stacker_guard_limit:
+                return
+            yield self.env.timeout(1.0)
+
+    # NEW: shift gating for manual movers
+    def _wait_shift_move(self):
+        if self.shift_move is None:
+            return
+        if not self.shift_move.active(int(self.env.now)):
+            yield from self.shift_move.wait_if_inactive()
+
+    def _manual_travel_min(self, key: str, override_min: float = None) -> float:
+        # des_factory_web: manual_post에 to_*_travel_min 있으면 그걸 우선
+        if override_min is not None:
+            try:
+                ov = float(override_min)
+                if ov > 0:
+                    return ov
+            except Exception:
+                pass
+
+        d = float(self.manual_dist.get(key, 0.0) or 0.0)
+        if self.manual_speed_m_per_s <= 0:
+            return 0.0
+        return (d / self.manual_speed_m_per_s) / 60.0
+
+    def _manual_move(self, route_key: str, job: "Job" = None, *, include_unload=False):
+        """
+        manual mover travel between stations (SHIFT-GATED for movement)
+        - seize mover
+        - if include_unload: spend human_unload_min (shift gated)
+        - travel time (shift gated)
+        """
+        yield from self._wait_shift_move()
+        
 
         if self.logger:
             self.logger.log_event(
-                "AUTO_POST",
-                f"AMR MOVE [{from_to_key}] for Job {getattr(job, 'id_job', '?')} | "
-                f"dist={dist_m} m, t_move={t_move:.1f} min"
+                "VALIDATION",
+                (
+                    f"[MOVE-MANUAL] Job {getattr(job,'id_job',None)} | Platform {getattr(job,'platform_id',None)} | "
+                    f"route={route_key} "
+                )
             )
 
-        with self.amr_pool.resource.request() as req:
+        unload_used = 0.0
+        travel_min = 0.0
+        t0 = t1 = self.env.now
+
+        with self.movers.resource.request() as req:
             yield req
+            yield from self._wait_shift_move()
+
             t0 = self.env.now
-            yield self.env.timeout(t_move)
+
+            # unload (optional, only for printer -> wash1 in manual flow)
+            if include_unload and self.human_unload_min > 0:
+                unload_used = float(self.human_unload_min)
+                yield self.env.timeout(unload_used)
+
+
+            # travel (shift-gated, but we model it as continuous within active shift segments
+            # here via wait gating + timeout; des_factory_web uses a more granular work-with-shift,
+            # but effect is "no movement outside shift")
+            # route_key naming: printer_to_wash1 / wash1_to_wash2 / wash_to_dry / uv_to_stacker
+            override = None
+            if route_key == "printer_to_wash1":
+                override = self.to_washer_travel_min
+            elif route_key == "wash1_to_wash2":
+                override = self.to_wash2_travel_min
+            elif route_key == "wash_to_dry":
+                override = self.to_dryer_travel_min
+            elif route_key in ("uv_to_stacker", "to_stacker"):
+                override = self.to_stacker_travel_min
+
+            travel_min = self._manual_travel_min(route_key, override_min=override)
+            remaining = travel_min
+
+            while remaining > 0:
+                # 1) 근무시간 아니면 다음 근무까지 대기
+                if not self.shift_move.active(int(self.env.now)):
+                    yield from self.shift_move.wait_if_inactive()
+                    continue
+
+                # 2) 이번 근무에서 남은 시간
+                workable = self.shift_move.remaining_work_minutes(int(self.env.now))
+                if workable <= 0:
+                    yield from self.shift_move.wait_if_inactive()
+                    continue
+
+                # 3) 이번에 실제 이동할 시간
+                move_now = min(remaining, workable)
+
+                # 4) 이동 수행
+                yield self.env.timeout(move_now)
+                remaining -= move_now
+
+
+            t1 = self.env.now
+
+        if job is not None:
+            self._record_trace_mover(t0, t1, job)
+
+        if self.logger:
+            self.logger.log_event(
+                "VALIDATION",
+                (   
+                    f"[MOVE-MANUAL][DONE] Job {getattr(job,'id_job',None)} | Platform {getattr(job,'platform_id',None)} | "
+                    f"route={route_key} | travel_min={travel_min:.2f} | "
+                    f"t0={t0:.2f} -> t1={t1:.2f} (elapsed={(t1-t0):.2f})"
+                )
+            )
+
+ 
+    # AMR move (unchanged)
+    def _amr_move(self, from_to_key: str, job: "Job" = None, dest_resource=None):
+        if self.amr_pool is None:
+            if self.logger:
+                self.logger.log_event(
+                    "VALIDATION",
+                    f"[MOVE-AMR][SKIP] Job {getattr(job,'id_job',None)} | route={from_to_key} | amr_pool=None"
+                )
+            yield self.env.timeout(0)
+            return None
+
+        dist_m = self.dist[from_to_key]
+        drive_min = (dist_m / self.speed_m_per_s) / 60.0
+        travel_min = float(self.load_min) + float(drive_min)
+        unload_min = float(self.unload_min)
+
+        if self.logger:
+            self.logger.log_event(
+                "VALIDATION",
+                (
+                    f"[MOVE-AMR] Job {getattr(job,'id_job',None)} | Platform {getattr(job,'platform_id',None)} | "
+                    f"route={from_to_key} | dist_m={dist_m} | speed_mps={self.speed_m_per_s} | "
+                    f"load_min={float(self.load_min):.2f} | drive_min={drive_min:.2f} | unload_min={unload_min:.2f} | "
+                    f"travel_min={travel_min:.2f} | amr_cap={getattr(self.amr_pool.resource,'capacity',1)} | "
+                )
+            )
+
+        self.kpi.amr_travel_min += (travel_min + unload_min)
+
+        dest_req = None
+        with self.amr_pool.resource.request() as amr_req:
+            yield amr_req
+            t0 = self.env.now
+
+            yield self.env.timeout(travel_min)
+
+            if dest_resource is not None:
+                dest_req = dest_resource.request()
+                yield dest_req
+
+            if unload_min > 0:
+                yield self.env.timeout(unload_min)
+
             t1 = self.env.now
 
         if job is not None:
             self._record_trace_amr(t0, t1, job)
 
-    # main run
-    def run(self, job: Job):
-        n_parts = len(job.list_items)
+        if self.logger:
+            self.logger.log_event(
+                "VALIDATION",
+                (
+                    f"[MOVE-AMR][DONE] Job {getattr(job,'id_job',None)} | Platform {getattr(job,'platform_id',None)} | "
+                    f"route={from_to_key} | t0={t0:.2f} -> t1={t1:.2f} (elapsed={(t1-t0):.2f}) | "
+                    f"dest_seized={'Y' if dest_req is not None else 'N'}"
+                )
+            )
+
+        return dest_req
+
+    # Generic stage runner
+    def _run_stage(self, *, route_key: str, stage_name: str, stage_resource, proc_time_min: float,
+                   kpi_busy_field: str, job: "Job", include_unload=False):
+        """
+        des_factory_web style:
+        - 이동 방식은 flow_mode에 따라 AMR 또는 manual mover
+        - 설비 가공(세척/건조/UV)은 시작하면 24/7 (shift gating 없음)
+        """
+
+        # 1) 이동 + 도착지 리소스 점유
+        req = None
+        if self.flow_mode == "manual":
+            if self.logger:
+                self.logger.log_event(
+                    "VALIDATION",
+                    f"[ROUTE] mode=manual | stage={stage_name} | route_key={route_key} | job={job.id_job}"
+                )
+            yield from self._manual_move(route_key, job, include_unload=include_unload)
+            req = stage_resource.request()
+            yield req
+        else:
+            if self.logger:
+                self.logger.log_event(
+                    "VALIDATION",
+                    f"[ROUTE] mode=automated | stage={stage_name} | route_key={route_key} | job={job.id_job}"
+                )
+
+            if self.amr_pool is None:
+                req = stage_resource.request()
+                yield req
+            else:
+                req = yield self.env.process(self._amr_move(route_key, job, dest_resource=stage_resource))
+                if req is None:
+                    req = stage_resource.request()
+                    yield req
+
+        # 2) 공정 시작 로그
+        if self.logger:
+            self.logger.log_event(
+                "PostProcessLine",
+                f"[START] Job {job.id_job} | Platform {getattr(job, 'platform_id', None)} | "
+                f"{stage_name}_start (parts={len(getattr(job, 'list_items', []) or [])})"
+            )
+
+        # 3) 설비 가공(shift gating 없음)
+        setattr(self.kpi, kpi_busy_field, getattr(self.kpi, kpi_busy_field) + float(proc_time_min))
+        t0 = self.env.now
+        yield self.env.timeout(proc_time_min)
+        t1 = self.env.now
+
+        if self.logger:
+            self.logger.log_event(
+                "PostProcessLine",
+                f"[COMPLETED] Job {job.id_job} | Platform {getattr(job, 'platform_id', None)} | "
+                f"{stage_name}_completed (parts={len(getattr(job, 'list_items', []) or [])})"
+            )
+
+        # 4) release
+        if req is not None:
+            stage_resource.release(req)
+
+        # 5) trace
+        self._record_trace_stage(stage_name, t0, t1, job)
+
+        return (t0, t1)
+
+    # Defect / scrap (full scrap & stop)
+    def _fail(self, rate: float) -> bool:
+        try:
+            r = float(rate)
+        except Exception:
+            r = 0.0
+        return (r > 0.0) and (random.random() < r)
+
+    def _scrap_all_and_stop(self, job: "Job", *, stage: str, n_good: int, scrapped_total: int):
+        scr = int(max(0, n_good))
+        if scr > 0:
+            self.kpi.scrapped_parts += scr
+            scrapped_total += scr
+
+        job.is_scrapped_job = True
+        job.scrap_stage = stage
+        job.scrapped_in_auto = scrapped_total
+        job.auto_post_good_parts = 0
+        job.auto_post_scrapped_parts = scrapped_total
+
+        if hasattr(job, "list_items") and job.list_items is not None:
+            job.list_items = []
+
+        if self.logger:
+            self.logger.log_event(
+                "PostProcessLine",
+                f"[SCRAP-FULL] Job {job.id_job} | Platform {getattr(job,'platform_id',None)} | "
+                f"stage={stage} failed, scrapped_all_remaining={scr}, scrapped_total={scrapped_total}"
+            )
+
+        return 0, scrapped_total, True
+
+    # Stage methods
+    def _wash1(self, job: "Job", n_good: int, scrapped_total: int):
+        t = self.m1.proc_time
+        # manual 모드에서는 printer->wash1 이동 시 human_unload 포함(des_factory_web의 unload 반영)
+        yield from self._run_stage(
+            route_key="printer_to_wash1",
+            stage_name="WashM1",
+            stage_resource=self.m1.resource,
+            proc_time_min=t,
+            kpi_busy_field="wash1_busy_min",
+            job=job,
+            include_unload=(self.flow_mode == "manual"),
+        )
+
+        if self._fail(self.def_wash):
+            return self._scrap_all_and_stop(job, stage="wash1", n_good=n_good, scrapped_total=scrapped_total)
+
+        return n_good, scrapped_total, False
+
+    def _wash2(self, job: "Job", n_good: int, scrapped_total: int):
+        t = self.m2.proc_time
+        yield from self._run_stage(
+            route_key="wash1_to_wash2",
+            stage_name="WashM2",
+            stage_resource=self.m2.resource,
+            proc_time_min=t,
+            kpi_busy_field="wash2_busy_min",
+            job=job,
+        )
+        # des_factory_web 정책: wash2에서 불량 게이트 없음
+        return n_good, scrapped_total
+
+    def _dry(self, job: "Job", n_good: int, scrapped_total: int):
+        t = self.dry.proc_time
+        yield from self._run_stage(
+            route_key="wash_to_dry",
+            stage_name="Dryer",
+            stage_resource=self.dry.resource,
+            proc_time_min=t,
+            kpi_busy_field="dry_busy_min",
+            job=job,
+        )
+
+        if self._fail(self.def_dry):
+            return self._scrap_all_and_stop(job, stage="dry", n_good=n_good, scrapped_total=scrapped_total)
+
+        return n_good, scrapped_total, False
+
+    def _uv(self, job: "Job", n_good: int, scrapped_total: int):
+        t = self.uv.proc_time
+        yield from self._run_stage(
+            route_key="dry_to_uv",
+            stage_name="UV",
+            stage_resource=self.uv.resource,
+            proc_time_min=t,
+            kpi_busy_field="uv_busy_min",
+            job=job,
+        )
+
+        if self._fail(self.def_uv):
+            return self._scrap_all_and_stop(job, stage="uv", n_good=n_good, scrapped_total=scrapped_total)
+
+        return n_good, scrapped_total, False
+
+    # Stacker push (flow_mode에 따라 이동 방식 선택)
+    def _build_payload(self, job: "Job", n_good: int, scrapped_total: int):
+        payload = build_stacker_payload(job, platform_id=job.platform_id, env_now=self.env.now)
+        payload["good_parts_after_auto"] = n_good
+        payload["scrapped_in_auto"] = scrapped_total
+        payload["is_scrapped_job"] = (n_good == 0)
+        return payload
+
+    def _push_to_stacker(self, job: "Job", payload: Dict[str, Any]):
+        if self.stacker is None:
+            return
+
+        # manual: shift-gated move -> guard -> put
+        if self.flow_mode == "manual":
+            yield from self._stacker_guard_wait()
+            yield self.stacker.put(payload)
+            return
+
+        # automated: AMR move + guard + put + unload
+        if self.amr_pool is None:
+            yield from self._stacker_guard_wait()
+            yield self.stacker.put(payload)
+            return
+
+        dist_m = self.dist["uv_to_stacker"]
+        drive_min = (dist_m / self.speed_m_per_s) / 60.0
+        travel_min = float(self.load_min) + float(drive_min)
+        unload_min = float(self.unload_min)
+
+        self.kpi.amr_travel_min += (travel_min + unload_min)
+
+        with self.amr_pool.resource.request() as amr_req:
+            yield amr_req
+            t0 = self.env.now
+
+            yield self.env.timeout(travel_min)
+            yield from self._stacker_guard_wait()
+            yield self.stacker.put(payload)
+
+            if unload_min > 0:
+                yield self.env.timeout(unload_min)
+
+            t1 = self.env.now
+
+        self._record_trace_amr(t0, t1, job)
+
+    # Main run
+    def run(self, job: "Job"):
+        n_parts = len(getattr(job, "list_items", []) or [])
         n_good = n_parts
         scrapped_total = 0
 
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"[START] Job {job.id_job} | Platform {getattr(job, 'platform_id', '?')} | "
-                f"auto-post process begins (n_parts={n_parts})"
-            )
+        if getattr(job, "is_scrapped_job", False):
+            if self.logger:
+                self.logger.log_event(
+                    "PostProcessLine",
+                    f"[SKIP] Job {job.id_job} already scrapped at {getattr(job, 'scrap_stage', 'unknown')}",
+                )
+            return
 
-        # Wash1 
-        if self.shift_amr and not self.shift_amr.active(int(self.env.now)):
-            yield from self.shift_amr.wait_if_inactive()
+        # Wash1 (fail gate)
+        n_good, scrapped_total, stop = (yield from self._wash1(job, n_good, scrapped_total))
+        if stop:
+            if self.logger:
+                self.logger.log_event(
+                    "VALIDATION",
+                    f"[SCRAP->CLEAN] Job {job.id_job} | Platform {getattr(job,'platform_id',None)} | "
+                    f"Wash1 failed → STOP post line and proceed to PlatformClean."
+                )
+            return
 
-        # AMR: printer -> wash1
-        yield self.env.process(self._amr_move("printer_to_wash1", job))
+        # Wash2 (no fail gate)
+        n_good, scrapped_total = (yield from self._wash2(job, n_good, scrapped_total))
 
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"Job {job.id_job} entering WashM1"
-            )
+        # Dry (fail gate)
+        n_good, scrapped_total, stop = (yield from self._dry(job, n_good, scrapped_total))
+        if stop:
+            if self.logger:
+                self.logger.log_event(
+                    "VALIDATION",
+                    f"[SCRAP->CLEAN] Job {job.id_job} | Platform {getattr(job,'platform_id',None)} | "
+                    f"Dry failed → STOP post line and proceed to PlatformClean."
+                )
+            return
 
-        with self.m1.resource.request() as req:
-            yield req
-            t = self.m1.proc_time
-            self.kpi.wash1_busy_min += t
-            t0 = self.env.now
-            yield self.env.timeout(t)
-            t1 = self.env.now
+        # UV (fail gate)
+        n_good, scrapped_total, stop = (yield from self._uv(job, n_good, scrapped_total))
+        if stop:
+            if self.logger:
+                self.logger.log_event(
+                    "VALIDATION",
+                    f"[SCRAP->CLEAN] Job {job.id_job} | Platform {getattr(job,'platform_id',None)} | "
+                    f"UV failed → STOP post line and proceed to PlatformClean."
+                )
+            return
 
-        # WashM1 trace
-        self._record_trace_stage("WashM1", t0, t1, job)
-
-        scr = sample_stage_defects(n_good, self.def_wash)
-        n_good -= scr
-        scrapped_total += scr
-        self.kpi.scrapped_parts += scr
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"WashM1 done for Job {job.id_job} | t={t:.1f} min, "
-                f"scrapped={scr}, remaining_good={n_good}"
-            )
-
-        # Wash2
-        if self.shift_amr and not self.shift_amr.active(int(self.env.now)):
-            yield from self.shift_amr.wait_if_inactive()
-
-        yield self.env.process(self._amr_move("wash1_to_wash2", job))
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"Job {job.id_job} entering WashM2"
-            )
-
-        with self.m2.resource.request() as req:
-            yield req
-            t = self.m2.proc_time
-            self.kpi.wash2_busy_min += t
-            t0 = self.env.now
-            yield self.env.timeout(t)
-            t1 = self.env.now
-
-        # WashM2 trace
-        self._record_trace_stage("WashM2", t0, t1, job)
-
-        scr = sample_stage_defects(n_good, self.def_wash)
-        n_good -= scr
-        scrapped_total += scr
-        self.kpi.scrapped_parts += scr
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"WashM2 done for Job {job.id_job} | t={t:.1f} min, "
-                f"scrapped={scr}, remaining_good={n_good}"
-            )
-
-        # Dryer
-        if self.shift_amr and not self.shift_amr.active(int(self.env.now)):
-            yield from self.shift_amr.wait_if_inactive()
-
-        yield self.env.process(self._amr_move("wash_to_dry", job))
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"Job {job.id_job} entering Dryer"
-            )
-
-        with self.dry.resource.request() as req:
-            yield req
-            t = self.dry.proc_time
-            self.kpi.dry_busy_min += t
-            t0 = self.env.now
-            yield self.env.timeout(t)
-            t1 = self.env.now
-
-        # Dryer trace
-        self._record_trace_stage("Dryer", t0, t1, job)
-
-        scr = sample_stage_defects(n_good, self.def_dry)
-        n_good -= scr
-        scrapped_total += scr
-        self.kpi.scrapped_parts += scr
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"Dryer done for Job {job.id_job} | t={t:.1f} min, "
-                f"scrapped={scr}, remaining_good={n_good}"
-            )
-
-        # UV
-        if self.shift_amr and not self.shift_amr.active(int(self.env.now)):
-            yield from self.shift_amr.wait_if_inactive()
-
-        yield self.env.process(self._amr_move("dry_to_uv", job))
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"Job {job.id_job} entering UV"
-            )
-
-        with self.uv.resource.request() as req:
-            yield req
-            t = self.uv.proc_time
-            self.kpi.uv_busy_min += t
-            t0 = self.env.now
-            yield self.env.timeout(t)
-            t1 = self.env.now
-
-        # UV trace
-        self._record_trace_stage("UV", t0, t1, job)
-
-        scr = sample_stage_defects(n_good, self.def_uv)
-        n_good -= scr
-        scrapped_total += scr
-        self.kpi.scrapped_parts += scr
-
-        if self.logger:
-            self.logger.log_event(
-                "AUTO_POST",
-                f"UV done for Job {job.id_job} | t={t:.1f} min, "
-                f"scrapped={scr}, remaining_good={n_good}"
-            )
-
-        # UV -> Stacker
-        if self.shift_amr and not self.shift_amr.active(int(self.env.now)):
-            yield from self.shift_amr.wait_if_inactive()
-        yield self.env.process(self._amr_move("uv_to_stacker", job))
-
-        # Stacker payload
+        # success -> stacker
         if self.stacker is not None:
-            payload = build_stacker_payload(
-                job, platform_id=job.platform_id, env_now=self.env.now
-            )
-            payload["good_parts_after_auto"] = n_good
-            payload["scrapped_in_auto"] = scrapped_total
-            payload["is_scrapped_job"] = n_good == 0
-
-            # Stacker guard (limit WIP)
-            if (getattr(self, "stacker_guard_enabled", False)
-                and self.stacker_guard_limit > 0):
-                if self.logger:
-                    self.logger.log_event(
-                        "AUTO_POST",
-                        f"Stacker guard active (limit={self.stacker_guard_limit}). "
-                        f"Job {job.id_job} payload will wait if WIP >= limit."
-                    )
-
-            while True:
-                if (not getattr(self, "stacker_guard_enabled", False)) or \
-                   (self.stacker_guard_limit <= 0) or \
-                   (len(self.stacker.items) < self.stacker_guard_limit):
-                    break
-                yield self.env.timeout(1.0)
-
-            yield self.stacker.put(payload)
+            payload = self._build_payload(job, n_good, scrapped_total)
+            yield from self._push_to_stacker(job, payload)
 
             wip_now = len(self.stacker.items)
             if wip_now > self.kpi.max_stacker_wip:
                 self.kpi.max_stacker_wip = wip_now
 
-            if self.logger:
-                self.logger.log_event(
-                    "AUTO_POST",
-                    f"[STACKER] Job {job.id_job} payload pushed | "
-                    f"good_after_auto={n_good}, scrapped_total={scrapped_total}, "
-                    f"stacker_WIP={wip_now}"
-                )
-
         if self.logger:
             self.logger.log_event(
-                "AUTO_POST",
-                f"[END] Job {job.id_job} | auto-post process finished "
-                f"(good_after_auto={n_good}, scrapped_total={scrapped_total})"
+                "PostProcessLine",
+                f"[END] Job {job.id_job} | Platform {getattr(job, 'platform_id', None)} | "
+                f"post_line_finished (mode={self.flow_mode}, good={n_good}, scrap={scrapped_total})"
             )
 
 
-# 4. ManualPost (Worker)
+# 4. ManualPost (Worker)  -> 사실상 manual_ops(서포트/피니시/페인트)
 class ManualPost:
-    def __init__(self, env, cfg, kpi: KPI, logger=None, stacker=None, shift=None):
+    def __init__(self, env, cfg, kpi: "KPI", logger=None, stacker=None, shift=None):
         self.env = env
         self.cfg = cfg["manual_ops"]
         self.kpi = kpi
         self.logger = logger
-
-        self.stack_cfg = cfg.get("stacker_guard", {})
         self.stacker = stacker
+        self.shift = shift
 
-        # Manual worker resource
-        self.workers = Worker(env, self.cfg["workers"], 0)
-
-        # Slot usage for worker Gantt
+        self.workers = Worker(env, int(self.cfg.get("workers", 1) or 1), 0)
         self._worker_slots: Dict[int, list] = {}
 
-        # Predefined move times (if distance-based modeling is not used)
         self.move_times = {
             "plat_to_support": self.cfg["move_platform_to_support_min"],
             "support_to_finish": self.cfg["move_support_to_finish_min"],
@@ -693,12 +1023,7 @@ class ManualPost:
         self.dist = self.cfg.get("dist_m", {})
         self.speed_m_per_s = float(self.cfg.get("speed_m_per_s", 1.0))
 
-        # Worker shift info
-        self.shift_cfg = self.cfg.get("work_shift", None)
-        self.shift = shift
-
-    def _record_trace(self, t0: float, t1: float, job: Job, platform_id: str):
-        """Record manual worker processing interval."""
+    def _record_trace(self, t0: float, t1: float, job: "Job", platform_id: str):
         if not self.logger or not hasattr(self.logger, "trace_events"):
             return
 
@@ -718,74 +1043,53 @@ class ManualPost:
             }
         )
 
-    def run(self, job: Job):
-        """
-        Manual post-process for one platform:
-          1) Retrieve platform payload from the stacker
-          2) One worker handles the entire platform
-             - Platform-level tasks
-             - Part-level support / finish / paint
-             - Manual movement between stations
-        """
-        # Respect worker shift
+    def run(self, job: "Job"):
+        # shift 적용
         if self.shift and not self.shift.active(int(self.env.now)):
             yield from self.shift.wait_if_inactive()
 
-        if self.logger:
-            self.logger.log_event(
-                "MANUAL",
-                f"[START] Job {job.id_job} manual post-process begins"
-            )
-
-        # 1) Pull payload from stacker (if available)
+        # stacker에서 payload pull
         platform_id = getattr(job, "platform_id", f"JOB-{job.id_job}")
-        n_parts = len(job.list_items)
+        n_parts = len(getattr(job, "list_items", []) or [])
 
         payload = None
         if self.stacker is not None:
             payload = yield self.stacker.get()
-            # If payload has explicit platform id and part count, override
             platform_id = payload.get("platform_id", platform_id)
-            n_parts = int(payload.get("n_parts", n_parts))
 
-            if self.logger:
-                self.logger.log_event(
-                    "MANUAL",
-                    f"Job {job.id_job} pulled from stacker | "
-                    f"platform_id={platform_id}, n_parts={n_parts}"
-                )
+            good_after_auto = payload.get("good_parts_after_auto")
+            is_scrapped = payload.get("is_scrapped_job", False)
 
-        # Platform-level time
-        t_platform = float(self.cfg.get("support_time_per_platform_min", 0.0))
+            if good_after_auto is not None:
+                n_parts = int(good_after_auto)
+            else:
+                n_parts = int(payload.get("n_parts", n_parts))
 
-        # Part-level support / finish / paint time
+            if is_scrapped or n_parts <= 0:
+                if self.logger:
+                    self.logger.log_event(
+                        "MANUAL",
+                        f"[SKIP] Job {job.id_job} | Platform {platform_id} fully scrapped before manual_ops"
+                    )
+                return
+
+        # FIX: 플랫폼 단위 시간 키를 config와 맞춤
+        # - config에는 support_removal_time_min(=플랫폼 단위 작업)로 되어 있음
+        t_platform = float(self.cfg.get("support_removal_time_min", 0.0))
+
+        # part-level times
         t_support_parts = float(self.cfg["support_time_per_part_min"]) * n_parts
         t_finish_parts = float(self.cfg["finish_time_per_part_min"]) * n_parts
         t_paint_parts = float(self.cfg["paint_time_per_part_min"]) * n_parts
 
-        # Manual movement between stations
+        # movement times
         if self.dist:
-            t_plat_to_support = manual_travel_time_min(
-                self.dist.get("plat_to_support", 0.0), self.speed_m_per_s
-            )
-            t_support_to_finish = manual_travel_time_min(
-                self.dist.get("support_to_finish", 0.0), self.speed_m_per_s
-            )
-            t_finish_to_paint = manual_travel_time_min(
-                self.dist.get("finish_to_paint", 0.0), self.speed_m_per_s
-            )
-            t_paint_to_storage = manual_travel_time_min(
-                self.dist.get("paint_to_storage", 0.0), self.speed_m_per_s
-            )
-
-            t_move = (
-                t_plat_to_support
-                + t_support_to_finish
-                + t_finish_to_paint
-                + t_paint_to_storage
-            )
+            t_plat_to_support = manual_travel_time_min(self.dist.get("plat_to_support", 0.0), self.speed_m_per_s)
+            t_support_to_finish = manual_travel_time_min(self.dist.get("support_to_finish", 0.0), self.speed_m_per_s)
+            t_finish_to_paint = manual_travel_time_min(self.dist.get("finish_to_paint", 0.0), self.speed_m_per_s)
+            t_paint_to_storage = manual_travel_time_min(self.dist.get("paint_to_storage", 0.0), self.speed_m_per_s)
+            t_move = t_plat_to_support + t_support_to_finish + t_finish_to_paint + t_paint_to_storage
         else:
-            # Fallback: use fixed times from config
             t_move = (
                 float(self.move_times["plat_to_support"])
                 + float(self.move_times["support_to_finish"])
@@ -793,29 +1097,12 @@ class ManualPost:
                 + float(self.move_times["paint_to_storage"])
             )
 
-        # Total manual processing time
-        t_total = (
-            t_platform + t_support_parts + t_finish_parts + t_paint_parts + t_move
-        )
-
-        # KPI: manual worker busy time
+        t_total = t_platform + t_support_parts + t_finish_parts + t_paint_parts + t_move
         self.kpi.manual_busy_min += t_total
 
-        if self.logger:
-            self.logger.log_event(
-                "MANUAL",
-                f"Job {job.id_job} | Platform {platform_id} | "
-                f"manual total_time={t_total:.1f} min "
-                f"(platform={t_platform:.1f}, support={t_support_parts:.1f}, "
-                f"finish={t_finish_parts:.1f}, paint={t_paint_parts:.1f}, "
-                f"move={t_move:.1f})"
-            )
-
-        # Acquire one worker and process the entire platform
         with self.workers.resource.request() as req:
             yield req
 
-            # Check shift again in case we crossed a shift boundary
             if self.shift and not self.shift.active(int(self.env.now)):
                 yield from self.shift.wait_if_inactive()
 
@@ -823,21 +1110,11 @@ class ManualPost:
             yield self.env.timeout(t_total)
             end = self.env.now
 
-        # Record Gantt trace
         self._record_trace(start, end, job, platform_id)
 
-        # KPI: completed parts and lead time
         self.kpi.completed_parts += n_parts
         if hasattr(job, "start_time"):
             self.kpi.sum_platform_lead_time_min += self.env.now - job.start_time
-
-        # Logging
-        if self.logger:
-            self.logger.log_event(
-                "MANUAL",
-                f"[END] Job {job.id_job} | Platform {platform_id} | "
-                f"manual post-process finished (elapsed={end-start:.1f} min)"
-            )
 
 
 # 5. PlatformClean (PlatformWasher)
@@ -888,13 +1165,13 @@ class PlatformClean:
           - Update KPI (platform_wash_busy_min, lead time, finished_platforms)
         """
         plat_id = platform_token.get("id", "?") if platform_token else "UNKNOWN"
-
+        """
         if self.logger:
             self.logger.log_event(
                 "PLATFORM_CLEAN",
                 f"[START] Job {job.id_job} | Platform {plat_id} entering platform cleaning"
             )
-
+        """
         # Seize platform washer
         with self.cleaner.resource.request() as req:
             yield req
@@ -921,6 +1198,7 @@ class PlatformClean:
 
         self.kpi.finished_platforms += 1
 
+        
         # Logging
         if self.logger:
             self.logger.log_event(
@@ -930,3 +1208,4 @@ class PlatformClean:
                     f"(wash_time={self.cleaner.proc_time} min)"
                 ),
             )
+        

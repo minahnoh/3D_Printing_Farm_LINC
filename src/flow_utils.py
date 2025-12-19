@@ -26,7 +26,6 @@ def sample_stage_defects(num_good, defect_rate):
     """
     if num_good <= 0 or defect_rate <= 0.0:
         return 0
-    # 간단하게 기대값을 반올림 (진짜 binomial 샘플링이 필요하면 random.random() 루프 돌리면 됨)
     expected = num_good * defect_rate
     return int(round(expected))
 
@@ -50,7 +49,7 @@ def build_stacker_payload(job, platform_id: str, env_now: float) -> Dict[str, An
     return payload
 
 def manual_travel_time_min(dist_m: float, speed_m_per_s: float) -> float:
-    """거리/속도 기반 manual 이동시간(분)"""
+    """manual travel time(min) based distance/speed"""
     if speed_m_per_s <= 0:
         return 0
     return (dist_m / speed_m_per_s) / 60.0

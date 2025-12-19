@@ -7,7 +7,7 @@ from platform_manager import PlatformManager
 from specialized_Process import (
     Preprocess,
     Print,
-    AutoPost,
+    PostProcessLine,
     ManualPost,
     PlatformClean,
 )
@@ -21,11 +21,11 @@ class Factory:
 
     This class wires together:
         - PlatformManager
-        - Preprocess / Print / AutoPost / ManualPost / PlatformClean stages
+        - Preprocess / Print / PostProcessLine / ManualPost / PlatformClean stages
         - KPI and Logger
     """
 
-    def __init__(self,env,cfg: Dict[str, Any] = CFG, kpi: Optional[KPI] = None, logger = None) :
+    def __init__(self, env, cfg: Dict[str, Any] = CFG, kpi: Optional[KPI] = None, logger = None) :
         self.env = env
         self.cfg = cfg
         self.logger = logger
@@ -40,7 +40,7 @@ class Factory:
         # entire processes parameter
         process_cfg = PROC_DEFAULT
 
-        # Stacker: step between autopost and manualpost
+        # Stacker: step between PostProcessLine and manualpost
         self.stacker = simpy.Store(env, capacity=10_000)
 
         stacker_cfg = process_cfg["stacker_guard"]
@@ -57,26 +57,23 @@ class Factory:
         self.manual_move_speed = manual_move_cfg["speed_m_per_s"]
         self.manual_move_dist = manual_move_cfg["dist_m"]
 
-        # workter/AMR shift
+        # workter shift
         manual_shift_cfg = self.cfg["manual_ops"].get("work_shift", {})
-        auto_shift_cfg   = self.cfg["auto_post"].get("work_shift_amr", manual_shift_cfg)
-
-        self.shift_manual = WorkShiftManager(env, manual_shift_cfg)
-        self.shift_amr    = WorkShiftManager(env, auto_shift_cfg)
+        shift_manual = WorkShiftManager(env, manual_shift_cfg)
 
 
         # Instantiate all stages
         self.preproc_stage          = Preprocess(env, cfg=self.cfg, platM=self.platform_manager, kpi=self.kpi, logger=self.logger)
         self.print_stage            = Print(env, cfg=self.cfg["print"], kpi=self.kpi, logger=self.logger)
-        self.auto_post_stage        = AutoPost(env, cfg=self.cfg, kpi=self.kpi, logger=self.logger, amr_pool=self.amr_pool, stacker=self.stacker, shift_amr=self.shift_amr)
-        self.manual_stage           = ManualPost(env, cfg=self.cfg, kpi=self.kpi, logger=self.logger, shift=self.shift_manual)
+        self.auto_post_stage        = PostProcessLine(env, cfg=self.cfg, kpi=self.kpi, logger=self.logger, amr_pool=self.amr_pool, stacker=self.stacker, shift_move=shift_manual)
+        self.manual_stage           = ManualPost(env, cfg=self.cfg, kpi=self.kpi, logger=self.logger, shift=shift_manual)
         self.platform_clean_stage   = PlatformClean(env, cfg=self.cfg, platM=self.platform_manager, kpi=self.kpi, logger=self.logger)
 
         if self.logger:
             self.logger.log_event(
                 "Factory",
                 "Stage-based factory initialized "
-                "(Preprocess → Print → AutoPost → ManualPost → PlatformClean).",
+                "(Preprocess → Print → PostProcessLine → ManualPost → PlatformClean)."
             )
 
   
@@ -97,7 +94,6 @@ class Factory:
         return self.env.process(self._job_flow(job))
 
     def _log_resource(self, job, resource_type: str, t_start: float, t_end: float):
-        """Gantt용 trace 한 줄 추가 (자원 기준)."""
         if t_end <= t_start:
             return
         job_id = getattr(job, "id_job", None)
@@ -120,7 +116,7 @@ class Factory:
         """
         Full stage pipeline for a single job:
 
-            Preprocess → Print → AutoPost → ManualPost → PlatformClean
+            Preprocess → Print → PostProcessLine → ManualPost → PlatformClean
         """
 
         # 1) Preprocess (get clean platform, prep operations)
@@ -137,11 +133,12 @@ class Factory:
 
         # 5) Platform cleaning
         yield self.env.process(self.platform_clean_stage.run(job, platform_token))
-
+        
+        """
         if self.logger:
             self.logger.log_event(
                 "Factory",
                 f"Job {job.id_job} fully completed through stage pipeline.",
             )
-
+        """
 

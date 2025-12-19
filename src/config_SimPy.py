@@ -83,6 +83,12 @@ FACTORY_AUTO_POST = CFG["auto_post"]
 # Printing process configuration
 FACTORY_PRINT = CFG["print"]
 
+# Manual transport (workers carrying platforms)
+FACTORY_MANUAL_MOVE = CFG["manual_move"]
+
+# Manual post-processing (human-operated machines)
+FACTORY_MANUAL_POST = CFG["manual_post"]
+
 # Manual finishing operations (support removal, finishing, painting)
 FACTORY_MANUAL_OPS = CFG["manual_ops"]
 
