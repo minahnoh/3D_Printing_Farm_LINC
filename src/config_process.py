@@ -20,10 +20,10 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
         "order_cycle_min": 3 * 24 * 60,
 
         # Order size: patients and items per patient
-        "num_patients_per_order_min": 1,
-        "num_patients_per_order_max": 1,
-        "num_items_per_patient_min": 50,
-        "num_items_per_patient_max": 50,
+        "num_patients_per_order_min": 2,
+        "num_patients_per_order_max": 2,
+        "num_items_per_patient_min": 150,
+        "num_items_per_patient_max": 150,
 
         # Order due date
         "order_due_date_min": 7 * 24 * 60,
@@ -74,7 +74,7 @@ COMMON_PROC_DEFAULT: Dict[str, Any] = {
 
     # "automated": AMR Transport (24/7)
     # "manual": Manual Transport (Shift-based)
-    "flow_mode": "manual", #default : "automated"
+    "flow_mode": "automated", #default : "automated"
 }
 
 

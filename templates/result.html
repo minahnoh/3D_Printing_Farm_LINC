@@ -3,7 +3,1220 @@
 <head>
 <meta charset="UTF-8">
 <title>Simulation Result</title>
-<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-latest.min.js">
+function currentThemeVars(){
+  const root = getComputedStyle(document.documentElement);
+  const read = (name, fallback)=>{
+    const val = root.getPropertyValue(name);
+    return val && val.trim() ? val.trim() : fallback;
+  };
+  return {
+    text: read('--text', '#1a2146'),
+    muted: read('--muted', '#5c6b91'),
+    accent: read('--primary2', '#2d8cff'),
+    noticeBg: read('--notice-bg', '#f1f4ff'),
+    noticeText: read('--notice-text', '#1f2c5c'),
+    line: read('--line', '#d2d9f5'),
+    controlBg: read('--control-bg', '#ffffff'),
+    controlText: read('--control-text', '#132043'),
+    controlBorder: read('--control-border', '#c3cae7'),
+    barBg: read('--bar-bg', '#dbe3ff'),
+    canvasSurface: read('--canvas-surface', '#dde5ff'),
+    canvasSurfaceAlt: read('--canvas-surface-alt', '#f6f8ff'),
+    nightBg: read('--canvas-night', '#d1d4dc'),
+    canvasText: read('--canvas-text', '#20315f'),
+    canvasStation: read('--canvas-station', '#c3d4ff'),
+    canvasStationNight: read('--canvas-station-night', '#aebff7'),
+    canvasStationBorder: read('--canvas-station-border', 'rgba(28,48,102,0.25)'),
+    toolbarBg: read('--toolbar-bg', 'rgba(255,255,255,0.9)'),
+    toolbarBorder: read('--toolbar-border', '#c3cae7')
+  };
+}
+function redrawAnimations(){
+  const cache = window.__renderFactoryCache;
+  if(!cache) return;
+  const entries = Object.entries(cache);
+  if(!entries.length) return;
+  entries.forEach(([containerId, payload])=>{
+    if(!payload || !payload.trace) return;
+    renderFactory2D(containerId, payload.trace, payload.opts || {});
+  });
+}
+initThemeToggle();
+
+function barHtml(p){
+  const pct = Math.max(0, Math.min(100, p));
+  let color = pct<60? '#00ffa3' : (pct<85? '#00e5ff':'#ff2bd6');
+  return `<div class="bar"><span style="width:${pct}%;background:${color}"></span></div>`;
+}
+function svgRect(x,y,w,h,fill,stroke,label,textColor) {
+  return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" ry="12" fill="${fill}" stroke="${stroke}"></rect>
+  <text x="${x+12}" y="${y+22}" font-size="12" fill="${textColor}" font-weight="600">${label}</text></g>`;
+}
+
+function layoutSvgHtml(P, util){
+  const Np = (P.print && P.print.printer_count) || (P.print && P.print.printers ? P.print.printers.length : 2);
+  const W = 360;
+  const x0 = 20, y0 = 20, bw = 220, bh = 36, gap = 24;
+  let y = y0;
+  const blocks = [];
+  const arrowColor = 'var(--layout-arrow)';
+  const markerDef = `<defs><marker id="layoutArrow" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="${arrowColor}" /></marker></defs>`;
+  const arrowDown = (x,y)=>`<line x1="${x}" y1="${y}" x2="${x}" y2="${y+gap-6}" stroke="${arrowColor}" stroke-width="2" marker-end="url(#layoutArrow)" />`;
+  const arrows = [];
+  const stepFills = [
+    'var(--layout-step1)',
+    'var(--layout-step2)',
+    'var(--layout-step3)',
+    'var(--layout-step4)',
+    'var(--layout-step5)',
+    'var(--layout-step6)',
+    'var(--layout-step7)'
+  ];
+  const textColor = 'var(--layout-text)';
+  const strokeColor = 'var(--layout-border)';
+  function add(label, fillIdx){
+    const fill = stepFills[fillIdx % stepFills.length];
+    blocks.push(svgRect(x0, y, bw, bh, fill, strokeColor, label, textColor));
+    arrows.push(arrowDown(x0+bw/2, y+bh));
+    y += bh + gap;
+  }
+  add(`전처리 x${(P.preproc&&P.preproc.servers)||2}`, 0);
+  add(`프린터 x${Np}`, 1);
+  add(`세척1 x${(P.auto_post&&P.auto_post.washers_m1)||1} / 세척2 x${(P.auto_post&&P.auto_post.washers_m2)||1}`, 2);
+  add(`플랫폼 세척 x${(P.platform_clean&&P.platform_clean.washers)||1}`, 3);
+  add(`건조 x${(P.auto_post&&P.auto_post.dryers)||2}`, 4);
+  add(`UV x${(P.auto_post&&P.auto_post.uv_units)||1}`, 5);
+  add('스택커', 6);
+  // Util bars stacked below
+  const uKeys = ['preproc','printers','wash_m1','wash_m2','platform_wash','dryers','uv_units','manual_workers','amr'];
+  const names = ['전처리','프린터','세척1','세척2','플랫폼 세척','건조','UV경화','작업자','AMR'];
+  let gy = y + 10; let utilG = '';
+  for(let i=0;i<uKeys.length;i++){
+    const k = uKeys[i]; const p = util[k]||0; const label = names[i];
+    const w = Math.max(0,Math.min(100,p*100)); const c=w<60?'#00ffa3':(w<85?'#00e5ff':'#ff2bd6');
+    utilG += `<g transform="translate(${x0},${gy})"><text x="0" y="-2" font-size="11" fill="var(--layout-text)">${label} ${(p*100).toFixed(0)}%</text><g transform="translate(0,2)"><rect x="0" y="0" width="${w*2}" height="10" fill="${c}" rx="5"></rect></g></g>`;
+    gy += 24;
+  }
+  const stepsBottom = y - gap;
+  const utilBottom = utilG ? (gy + 10) : stepsBottom;
+  const H = Math.max(540, utilBottom + 40, stepsBottom + 40);
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${markerDef}${blocks.join('')}${arrows.join('')}${utilG}</svg></div>`;
+}
+
+function parseKRW(val){ if(val==null) return NaN; const s = String(val).replace(/,/g,'').trim(); const n = parseFloat(s); return isNaN(n)? NaN : n; }
+function attachKRWFormat(){
+  const els = document.querySelectorAll('input.krw');
+  els.forEach(el=>{
+    el.addEventListener('blur', ()=>{
+      const n = parseKRW(el.value); if(!isNaN(n)) el.value = n.toLocaleString('ko-KR');
+    });
+  });
+}
+
+async function run(){
+  attachKRWFormat();
+  let P;
+  try { P = eval('(' + document.getElementById('raw').value + ')'); }
+  catch(e){ try{ P = JSON.parse(document.getElementById('raw').value); }catch(e2){ alert('Raw JSON 파싱 오류'); return; } }
+
+  P = P || {};
+  // show progress immediately
+  document.getElementById('out').innerHTML = '<div class="card"><b>시뮬레이션 실행 중...</b> (기본 30일 × 자동화/비자동화 비교로 1~2분 걸릴 수 있어요)</div>';
+  P.horizon = { duration: document.getElementById('duration').value,
+                 days: (document.getElementById('duration').value==='days'? parseInt(document.getElementById('days').value||'0'): null) };
+  P.demand = P.demand || {};
+  P.material = P.material || {};
+  P.print = P.print || {};
+  P.auto_post = P.auto_post || {};
+  P.manual_post = P.manual_post || {};
+  P.manual_ops = P.manual_ops || {};
+  P.stacker_guard = P.stacker_guard || {};
+
+  P.demand.platform_interarrival_min_min = parseFloat(document.getElementById('inter_min').value);
+  P.demand.platform_interarrival_max_min = parseFloat(document.getElementById('inter_max').value);
+  P.demand.initial_platforms = parseInt(document.getElementById('initial_platforms').value||'0');
+  P.demand.install_time_min = parseFloat(document.getElementById('install_time').value||'60');
+  P.demand.install_parallel = document.getElementById('install_parallel').checked;
+  P.material.avg_part_mass_kg = parseFloat(document.getElementById('avg_part_mass_kg').value);
+  {
+    const rp = parseKRW(document.getElementById('resin_price_per_kg').value);
+    if(!isNaN(rp)) P.material.resin_price_per_kg = rp;
+  }
+  P.print.t_print_per_platform_min = parseFloat(document.getElementById('t_print').value);
+  P.print.max_parts_per_platform = parseInt(document.getElementById('max_parts_per_platform').value);
+  P.material.max_parts_per_platform = P.print.max_parts_per_platform;
+  P.print.printer_count = parseInt(document.getElementById('printer_count').value);
+  const pdr = parseFloat(document.getElementById('print_defect_rate').value);
+  if(!isNaN(pdr)) { P.print.defect_rate = pdr/100.0; }
+  // preproc
+  P.preproc = P.preproc || {};
+  P.preproc.servers = parseInt(document.getElementById('preproc_servers').value);
+  P.preproc.healing_time_per_platform_min = parseFloat(document.getElementById('heal_per_plat').value);
+  P.preproc.placement_time_per_platform_min = parseFloat(document.getElementById('placement_per_plat').value);
+      P.preproc.support_time_per_platform_min = parseFloat(document.getElementById('support_per_plat').value);
+  P.print.install_time_min = parseFloat(document.getElementById('install_time').value||'60');
+  P.print.install_parallel = document.getElementById('install_parallel').checked;
+  P.auto_post.amr_count = parseInt(document.getElementById('amr_count').value);
+  P.auto_post.amr_speed_m_per_s = parseFloat(document.getElementById('amr_speed').value);
+  P.auto_post.amr_load_min = parseFloat(document.getElementById('amr_load').value);
+  P.auto_post.amr_unload_min = parseFloat(document.getElementById('amr_unload').value);
+  P.auto_post.washers_m1 = parseInt(document.getElementById('washers_m1').value);
+  P.auto_post.washers_m2 = parseInt(document.getElementById('washers_m2').value);
+  P.auto_post.dryers = parseInt(document.getElementById('dryers').value);
+  P.auto_post.uv_units = parseInt(document.getElementById('uv_units').value);
+  const dist_pw = parseFloat(document.getElementById('d_pw').value||'0');
+  const dist_wd = parseFloat(document.getElementById('d_wd').value||'0');
+  const dist_du = parseFloat(document.getElementById('d_du').value||'0');
+  const dist_us = parseFloat(document.getElementById('d_us').value||'0');
+  P.auto_post.dist_m = {
+    printer_to_wash: dist_pw,
+    wash_to_dry: dist_wd,
+    dry_to_uv: dist_du,
+    uv_to_stacker: dist_us,
+    support_to_platform_wash: dist_pw,
+    platform_wash_to_new: dist_pw
+  };
+  // common defect rates (apply to both automated/manual since same equipment)
+  P.auto_post.defect_rate_wash = parseFloat(document.getElementById('c_def_w').value);
+  P.auto_post.defect_rate_dry = parseFloat(document.getElementById('c_def_d').value);
+  P.auto_post.defect_rate_uv = parseFloat(document.getElementById('c_def_u').value);
+  P.auto_post.t_platform_install_min = parseFloat(document.getElementById('auto_install').value);
+  P.auto_post.t_platform_remove_min  = parseFloat(document.getElementById('auto_remove').value);
+  // common post-process times (used by both automated/manual)
+  const c_w1 = parseFloat(document.getElementById('cw1').value);
+  const c_w2 = parseFloat(document.getElementById('cw2').value);
+  const c_d  = parseFloat(document.getElementById('cdry').value);
+  const c_uv = parseFloat(document.getElementById('cuv').value);
+  P.auto_post.t_wash1_min = c_w1;
+  P.auto_post.t_wash2_min = c_w2;
+  P.auto_post.t_dry_min   = c_d;
+  P.auto_post.t_uv_min    = c_uv;
+
+  // manual (uses common process times and defect rates; only unload/travel and install/remove differ)
+  P.manual_post.t_platform_install_min = parseFloat(document.getElementById('man_install').value);
+  P.manual_post.t_platform_remove_min  = parseFloat(document.getElementById('man_remove').value);
+  P.manual_post.human_unload_min = parseFloat(document.getElementById('human_unload_min').value);
+  P.manual_post.to_washer_travel_min = parseFloat(document.getElementById('to_washer').value||'0');
+  P.manual_post.to_wash2_travel_min = parseFloat(document.getElementById('to_wash2').value||'0');
+  P.manual_post.to_dryer_travel_min = parseFloat(document.getElementById('to_dryer').value||'0');
+  P.manual_post.to_stacker_travel_min = parseFloat(document.getElementById('to_stacker').value||'0');
+  P.manual_post.to_platform_wash_travel_min = P.manual_post.to_washer_travel_min;
+  P.manual_post.to_newplatform_travel_min = P.manual_post.to_stacker_travel_min;
+  P.manual_ops.work_shift = {
+    start_hhmm: document.getElementById('ws_start').value,
+    end_hhmm: document.getElementById('ws_end').value,
+    work_cycle_days: 7,
+    workdays_per_cycle: parseInt(document.getElementById('ws_days').value||'5')
+  };
+  P.manual_ops.workers = parseInt(document.getElementById('workers').value);
+  P.manual_ops.support_time_per_platform_min = parseFloat(document.getElementById('sup_plat').value) || 0;
+  P.manual_ops.support_time_per_part_min = parseFloat(document.getElementById('sup_part').value) || 0;
+  P.manual_ops.finish_time_per_part_min = parseFloat(document.getElementById('fin').value) || 0;
+  P.manual_ops.paint_time_per_part_min = parseFloat(document.getElementById('paint').value) || 0;
+  P.manual_ops.move_platform_to_support_min = parseFloat(document.getElementById('move_plat_support').value) || 0;
+  P.manual_ops.move_support_to_finish_min = parseFloat(document.getElementById('move_support_finish').value) || 0;
+  P.manual_ops.move_finish_to_paint_min = parseFloat(document.getElementById('move_finish_paint').value) || 0;
+  P.manual_ops.move_paint_to_storage_min = parseFloat(document.getElementById('move_paint_storage').value) || 0;
+  // manual movers (pre-stacker human ops)
+  P.manual_move = P.manual_move || {};
+  P.manual_move.workers = parseInt(document.getElementById('mv_workers').value||'2');
+  P.manual_move.speed_m_per_s = parseFloat(document.getElementById('mv_speed').value||'2');
+  P.manual_move.work_shift = {
+    start_hhmm: document.getElementById('mv_ws_start').value||'09:00',
+    end_hhmm: document.getElementById('mv_ws_end').value||'18:00',
+    work_cycle_days: 7,
+    workdays_per_cycle: parseInt(document.getElementById('mv_ws_days').value||'5')
+  };
+  P.manual_move.prioritize_printer = !!document.getElementById('mv_prioritize').checked;
+  const manualDist = P.manual_move.dist_m || {};
+  P.manual_move.dist_m = {
+    printer_to_wash: manualDist.printer_to_wash ?? dist_pw,
+    wash1_to_wash2: manualDist.wash1_to_wash2 ?? dist_wd,
+    wash_to_dry: manualDist.wash_to_dry ?? dist_wd,
+    uv_to_stacker: manualDist.uv_to_stacker ?? dist_us,
+    support_to_platform_wash: manualDist.support_to_platform_wash ?? dist_pw,
+    platform_wash_to_new: manualDist.platform_wash_to_new ?? dist_pw
+  };
+  P.platform_clean = P.platform_clean || {};
+  P.platform_clean.washers = parseInt(document.getElementById('platform_washers').value||'1');
+  P.platform_clean.wash_time_min = parseFloat(document.getElementById('platform_wash_time').value||'60');
+  const platInitInput = document.getElementById('platform_initial_count');
+  const platInitVal = parseInt((platInitInput && platInitInput.value) || document.getElementById('initial_platforms').value||'10');
+  P.platform_clean.initial_platforms = platInitVal;
+  P.stacker_guard.enabled = !!document.getElementById('stacker_guard_enabled').checked;
+  const guardLimit = parseInt(document.getElementById('stacker_guard_limit').value||'0');
+  P.stacker_guard.max_platforms = isNaN(guardLimit)? 0 : guardLimit;
+  const TRACE_PLATFORM_CAP_DEFAULT = 150;
+  const TRACE_PART_CAP_DEFAULT = 20;
+  const TRACE_EVENT_CAP_DEFAULT = 500000;
+  if (P.viz_max_platforms == null) P.viz_max_platforms = TRACE_PLATFORM_CAP_DEFAULT;
+  if (P.viz_max_parts_per_platform == null) P.viz_max_parts_per_platform = TRACE_PART_CAP_DEFAULT;
+  if (P.viz_max_events == null) P.viz_max_events = TRACE_EVENT_CAP_DEFAULT;
+
+  // costs
+  P.cost = P.cost || {};
+  P.cost.wage_per_hour_krw = parseKRW(document.getElementById('cost_wage').value);
+  P.cost.depreciation_years = parseFloat(document.getElementById('dep_years').value);
+  P.cost.overhead_krw_per_month = parseKRW(document.getElementById('overhead').value);
+  P.cost.equipment = {
+    printer: parseKRW(document.getElementById('c_printer').value),
+    washer: parseKRW(document.getElementById('c_washer').value),
+    dryer: parseKRW(document.getElementById('c_dryer').value),
+    uv: parseKRW(document.getElementById('c_uv').value),
+    amr: parseKRW(document.getElementById('c_amr').value),
+    preproc_server: parseKRW(document.getElementById('c_pre').value),
+    platform_washer: parseKRW(document.getElementById('c_platform_wash').value)
+  };
+  try{
+    const snapshot = JSON.parse(JSON.stringify(P));
+    window.__LAST_PARAMS__ = snapshot;
+    const rawBox = document.getElementById('raw');
+    if(rawBox) rawBox.value = JSON.stringify(snapshot, null, 2);
+  }catch(err){ console.warn('Unable to snapshot params', err); }
+
+  const payload = { params: P, seed: parseInt(document.getElementById('seed').value||'42') };
+  let data;
+  try{
+    const res = await fetch('/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    data = await res.json();
+  }catch(err){
+    console.error(err);
+    alert('네트워크 또는 서버 오류가 발생했습니다. 콘솔을 확인해주세요.');
+    return;
+  }
+  if(!data.ok) { alert('에러: '+data.error); return; }
+
+  const a = data.results.automated; const m = data.results.manual;
+  const utilA = a.utilization, utilM = m? m.utilization : null;
+  const layoutA = layoutSvgHtml(P, utilA);
+  const layoutM = m? layoutSvgHtml(P, utilM) : '';
+  function tbl(r){
+    const totalParts = (r.started_parts && r.started_parts>0)? r.started_parts : (r.completed_parts + r.scrapped_parts);
+    const scrapDisplay = (()=>{
+      if(!totalParts || totalParts===0) return r.scrapped_parts.toLocaleString();
+      const pct = (r.scrapped_parts/totalParts)*100;
+      return `${r.scrapped_parts.toLocaleString()} / ${totalParts.toLocaleString()} (${pct.toFixed(2)}%)`;
+    })();
+    return `
+      <table>
+        <tr><th>지표</th><th>값</th></tr>
+        <tr><td>전체 진행된 파트 수</td><td>${totalParts? totalParts.toLocaleString() : '-'}</td></tr>
+        <tr><td>완료 파트 수</td><td>${r.completed_parts}</td></tr>
+        <tr><td>스크랩 수</td><td>${scrapDisplay}</td></tr>
+        <tr><td>최종 수율</td><td>${r.yield_final===null?'-':r.yield_final.toFixed(3)}</td></tr>
+        <tr><td>완료 빌드플랫폼 수</td><td>${r.completed_platforms}</td></tr>
+        <tr><td>평균 리드타임 (분)</td><td>${r.avg_platform_lead_time_min===null?'-':r.avg_platform_lead_time_min.toFixed(1)}</td></tr>
+        <tr><td>레진 사용 (kg)</td><td>${r.resin_used_kg}</td></tr>
+        <tr><td>시뮬레이션 기간 (분)</td><td>${r.horizon_minutes}</td></tr>
+      </table>`;
+  }
+  function utilTbl(u){
+    const label = {
+      printers:'프린터', wash_m1:'세척1', wash_m2:'세척2', dryers:'건조기', uv_units:'UV경화', platform_wash:'플랫폼 세척', amr:'AMR', preproc:'전처리', manual_workers:'수작업'
+    };
+    return `<table>
+      <tr><th>자원</th><th>가동률</th><th></th></tr>
+      ${Object.keys(u).map(k=>{ const p=u[k]*100; const name = label[k]||k; return `<tr><td>${name}</td><td>${p.toFixed(1)}%</td><td>${barHtml(p)}</td></tr>`; }).join('')}
+    </table>`;
+  }
+  function costTbl(c){
+    return `<table>
+      <tr><th>비용 항목</th><th>금액(KRW)</th></tr>
+      <tr><td>노동비</td><td>${c.labor_krw.toLocaleString()}</td></tr>
+      <tr><td>소재비</td><td>${c.material_krw.toLocaleString()}</td></tr>
+      <tr><td>감가상각</td><td>${c.depreciation_krw.toLocaleString()}</td></tr>
+      <tr><td>인프라/고정비</td><td>${c.overhead_krw.toLocaleString()}</td></tr>
+      <tr><td><b>총비용</b></td><td><b>${c.total_krw.toLocaleString()}</b></td></tr>
+      <tr><td><b>단가(파트당)</b></td><td><b>${c.unit_cost_krw===null?'-':c.unit_cost_krw.toLocaleString()}</b></td></tr>
+    </table>`;
+  }
+  function waitTbl(w){
+    const label = {printer:'프린터', wash_m1:'세척1', wash_m2:'세척2', dryers:'건조기', uv:'UV경화', amr:'AMR', preproc:'전처리', manual_movers:'이송/운전 인력', platform_wash:'플랫폼 세척', stacker_guard:'스택커 가드'};
+    const keys = Object.keys(w||{});
+    if(keys.length===0) return '<small>대기시간 데이터 없음</small>';
+    return `<table>
+      <tr><th>자원</th><th>평균 대기(분)</th><th>최대 대기(분)</th><th>요청수</th></tr>
+      ${keys.map(k=>`<tr><td>${label[k]||k}</td><td>${(w[k].avg_min||0).toFixed(1)}</td><td>${(w[k].max_min||0).toFixed(1)}</td><td>${w[k].req}</td></tr>`).join('')}
+    </table>`;
+  }
+  // 2D Canvas animation -----------------------------------------
+  function renderFactory2D(containerId, trace, opts){
+    opts = opts || {};
+    const theme = currentThemeVars();
+    const fontScale = 1.3;
+    const fontPx = (size, weight='normal')=>{
+      const px = Math.round(size * fontScale);
+      return `${weight && weight!=='normal' ? weight + ' ' : ''}${px}px system-ui`;
+    };
+    const partRadius = 2.4;
+    const amrRadius = 4;
+    const moverRadius = 4;
+    const platformRadius = 5;
+    const stageDim = {
+      new_plat:{w:78,h:24},
+      printers:{w:96,h:28},
+      platform_wash:{w:86,h:24},
+      wash1:{w:82,h:24},
+      wash2:{w:82,h:24},
+      dry:{w:86,h:24},
+      uv:{w:86,h:24},
+      stacker:{w:96,h:28},
+      support_plat:{w:86,h:24},
+      support_part:{w:86,h:24},
+      finish:{w:82,h:24},
+      paint:{w:82,h:24},
+      storage:{w:90,h:26}
+    };
+    const tokenRadius = (token)=>{
+      if(!token) return platformRadius;
+      if(token.isPart) return partRadius;
+      if(token.isAmr) return amrRadius;
+      if(token.isMover) return moverRadius;
+      return platformRadius;
+    };
+    const automated = !!opts.automated;
+    const horizonMinutes = Number(opts.horizonMinutes || 0);
+    const container = document.getElementById(containerId);
+    if(!container){
+      if(window.__renderFactoryCache){
+        delete window.__renderFactoryCache[containerId];
+      }
+      return;
+    }
+    const W = container.clientWidth || 1000;
+    const H = Math.max(700, container.clientHeight || 700);
+    container.style.minHeight = `${H}px`;
+    container.style.width = '100%';
+    const hostCard = container.closest('.card');
+    if(hostCard){
+      hostCard.style.overflow = 'visible';
+    }
+    if(!trace || trace.length===0){
+      container.innerHTML = `<div style="padding:8px;color:${theme.noticeText};background:${theme.noticeBg};border-radius:8px;border:1px solid ${theme.line}">애니메이션을 위한 트레이스를 찾을 수 없습니다. 시뮬레이션을 다시 실행해 주세요.</div>`;
+      if(window.__renderFactoryCache){
+        delete window.__renderFactoryCache[containerId];
+      }
+      return;
+    }
+    window.__renderFactoryCache = window.__renderFactoryCache || {};
+    window.__renderFactoryCache[containerId] = {trace, opts: Object.assign({}, opts)};
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;background:${theme.toolbarBg};border:1px solid ${theme.toolbarBorder};border-radius:10px;padding:10px 12px">
+        <button id="${containerId}_play" style="padding:6px 10px;border-radius:6px;border:1px solid ${theme.toolbarBorder};background:${theme.accent};color:#fff">Play</button>
+        <button id="${containerId}_pause" style="padding:6px 10px;border-radius:6px;border:1px solid ${theme.toolbarBorder};background:${theme.controlBg};color:${theme.controlText}">Pause</button>
+        <button id="${containerId}_restart" style="padding:6px 10px;border-radius:6px;border:1px solid ${theme.toolbarBorder};background:${theme.controlBg};color:${theme.controlText}">Restart</button>
+        <label style="color:${theme.text};margin-left:6px">Speed</label>
+        <select id="${containerId}_speed" style="background:${theme.controlBg};color:${theme.controlText};border:1px solid ${theme.controlBorder};border-radius:6px;padding:4px">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="5">5x</option>
+        </select>
+        <label style="color:${theme.text};margin-left:12px">Playback</label>
+        <select id="${containerId}_duration" style="background:${theme.controlBg};color:${theme.controlText};border:1px solid ${theme.controlBorder};border-radius:6px;padding:4px">
+          <option value="60000" selected>1분</option>
+          <option value="120000">2분</option>
+          <option value="300000">5분</option>
+        </select>
+      </div>
+      <canvas width="${W}" height="${H}"></canvas>`;
+    const canvas = container.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${H}px`;
+    ctx.scale(dpr, dpr);
+    // stations (x,y) laid out to avoid overlap (two rows)
+    const centerY = H * 0.55;
+    const processSpacing = Math.min(130, H * 0.18);
+    let manualSpacing = Math.min(130, H * 0.20);
+
+    const newPlatLeft = 60;
+    const newPlatCenter = newPlatLeft + stageDim.new_plat.w / 2;
+    const gapCount = 5;
+    const marginRight = 60;
+    const maxRight = W - stageDim.storage.w/2 - marginRight;
+    let baseSpacing = (maxRight - newPlatCenter) / gapCount;
+    const minGap = 170;
+    if(baseSpacing < minGap) baseSpacing = minGap;
+    if(newPlatCenter + baseSpacing * gapCount > maxRight){
+      baseSpacing = Math.max((maxRight - newPlatCenter) / gapCount, minGap * 0.7);
+    }
+    const columns = Array.from({length: gapCount + 1}, (_, i)=> newPlatCenter + baseSpacing * i);
+    const printersCenter = columns[1];
+    const processCenter = columns[2];
+    let stackerCenter = columns[3];
+    let supportColumnX = columns[4];
+    let storageCenterX = columns[5];
+
+    const desiredGap = baseSpacing;
+    if(stackerCenter - processCenter < desiredGap){
+      stackerCenter = processCenter + desiredGap;
+    }
+    if(supportColumnX - stackerCenter < desiredGap){
+      supportColumnX = stackerCenter + desiredGap;
+    }
+    if(storageCenterX - supportColumnX < desiredGap){
+      storageCenterX = supportColumnX + desiredGap;
+    }
+    if(storageCenterX > maxRight){
+      const adjust = storageCenterX - maxRight;
+      storageCenterX = maxRight;
+      supportColumnX -= adjust;
+      stackerCenter -= adjust;
+    }
+
+    const printersGapY = Math.min(processSpacing * 0.6, 90);
+    let wash1Y = centerY - processSpacing * 1.5;
+    if(wash1Y < 140){
+      const diff = 140 - wash1Y;
+      wash1Y += diff;
+    }
+    let wash2Y = wash1Y + processSpacing;
+    let dryY = wash2Y + processSpacing;
+    let uvY = dryY + processSpacing;
+    const maxBottom = H - 80;
+    if(uvY + stageDim.uv.h/2 > maxBottom){
+      const shift = uvY + stageDim.uv.h/2 - maxBottom;
+      wash1Y -= shift;
+      wash2Y -= shift;
+      dryY -= shift;
+      uvY -= shift;
+    }
+    const printersY = (wash1Y + wash2Y) / 2;
+    let platformWashY = (dryY + uvY) / 2;
+    if(platformWashY <= printersY + 20){
+      platformWashY = printersY + 20;
+    }
+
+    const manualStart = centerY - manualSpacing * 1.5;
+    let supportTopY = manualStart;
+    let supportPartY = supportTopY + manualSpacing;
+    let finishY = supportPartY + manualSpacing;
+    let paintY = finishY + manualSpacing;
+    if(supportTopY < 140){
+      const shift = 140 - supportTopY;
+      supportTopY += shift;
+      supportPartY += shift;
+      finishY += shift;
+      paintY += shift;
+    }
+    const manualBottom = paintY + stageDim.paint.h/2;
+    if(manualBottom > maxBottom){
+      const shift = manualBottom - maxBottom;
+      supportTopY -= shift;
+      supportPartY -= shift;
+      finishY -= shift;
+      paintY -= shift;
+    }
+    const storageCenterY = centerY;
+
+    const pos = {
+      new_plat:[newPlatCenter, centerY],
+      printers:[printersCenter, printersY],
+      platform_wash:[printersCenter, platformWashY],
+      wash1:[processCenter, wash1Y],
+      wash2:[processCenter, wash2Y],
+      dry:[processCenter, dryY],
+      uv:[processCenter, uvY],
+      stacker:[stackerCenter, centerY],
+      support_plat:[supportColumnX, supportTopY],
+      support_part:[supportColumnX, supportPartY],
+      finish:[supportColumnX, finishY],
+      paint:[supportColumnX, paintY],
+      storage:[storageCenterX, storageCenterY]
+    };
+    const labelPos = { x: (newPlatCenter + stackerCenter) / 2, y: 36 };
+    const workShift = (P.manual_move && P.manual_move.work_shift) || {start_hhmm:'09:00', end_hhmm:'18:00', work_cycle_days:7, workdays_per_cycle:5};
+    const cycleDays = Number(workShift.work_cycle_days || 7);
+    const workDays = Number(workShift.workdays_per_cycle || cycleDays);
+    const weekdays = ['월요일','화요일','수요일','목요일','금요일','토요일','일요일'];
+    const rainbowStations = new Set(['printers','platform_wash','wash1','wash2','dry','uv','stacker']);
+    const rainbowColors = ['#ff6b6b','#f7c948','#4ade80','#38bdf8','#818cf8','#f472b6'];
+    let busyStations = new Set();
+    // preprocess trace
+    const byId = {}; (trace||[]).forEach(e=>{ (byId[e.id]=byId[e.id]||[]).push(e); });
+    const pickTail = (arr, n)=> arr.slice(Math.max(0, arr.length - n));
+    const allIds = Object.keys(byId);
+    const rawTokens = allIds.map((id)=>{
+      const segs = byId[id].sort((a,b)=>a.t0-b.t0);
+      const isPart = id.includes('-P');
+      const isAmr = id.endsWith('-AMR');
+      const isMover = id.endsWith('-MOV');
+      const isCarrier = isAmr || isMover;
+      const baseId = isPart ? id.split('-P')[0] : (isCarrier ? id.replace(/-(AMR|MOV)$/,'') : id);
+      const color = isPart ? '#22c55e' : (isAmr ? '#fde047' : (isMover ? '#3b82f6' : '#f97316'));
+      const isAmrIdle = id.startsWith('AMR-') && !isAmr;
+      return {id, color, segs, isPart, isAmr, isMover, isCarrier, baseId, isAmrIdle};
+    });
+    const maxPlat = Number(P?.viz_max_platforms||0);
+    const maxPart = Number(P?.viz_max_parts_per_platform||0);
+    const basePlatformTokens = rawTokens.filter(t=> t.id.startsWith('PLAT-') && !t.isCarrier && !t.isPart);
+    const baseIdsOrdered = basePlatformTokens.map(t=>t.id);
+    const selectedBaseIds = (maxPlat && maxPlat>0)? pickTail(baseIdsOrdered, maxPlat) : baseIdsOrdered;
+    const selectedBaseSet = new Set(selectedBaseIds);
+    const baseTokenMap = new Map(basePlatformTokens.map(t=>[t.id, t]));
+    const partByBase = new Map();
+    rawTokens.filter(t=>t.isPart && selectedBaseSet.has(t.baseId)).forEach(t=>{
+      if(!partByBase.has(t.baseId)) partByBase.set(t.baseId, []);
+      partByBase.get(t.baseId).push(t);
+    });
+    const moverByBase = new Map();
+    rawTokens.filter(t=>t.isMover && selectedBaseSet.has(t.baseId)).forEach(t=>{
+      if(!moverByBase.has(t.baseId)) moverByBase.set(t.baseId, []);
+      moverByBase.get(t.baseId).push(t);
+    });
+    const amrByBase = new Map();
+    rawTokens.filter(t=>t.isAmr && selectedBaseSet.has(t.baseId)).forEach(t=>{
+      if(!amrByBase.has(t.baseId)) amrByBase.set(t.baseId, []);
+      amrByBase.get(t.baseId).push(t);
+    });
+    const tokens = [];
+    const seenIds = new Set();
+    const pushToken = (token)=>{
+      if(!token || seenIds.has(token.id)) return;
+      tokens.push(token);
+      seenIds.add(token.id);
+    };
+    selectedBaseIds.forEach(baseId=>{
+      pushToken(baseTokenMap.get(baseId));
+      const parts = partByBase.get(baseId) || [];
+      const chosenParts = (maxPart && maxPart>0)? pickTail(parts, maxPart) : parts;
+      chosenParts.forEach(pushToken);
+      (moverByBase.get(baseId) || []).forEach(pushToken);
+      (amrByBase.get(baseId) || []).forEach(pushToken);
+    });
+    rawTokens.filter(t=>t.isAmrIdle).forEach(pushToken);
+    rawTokens.filter(t=>!t.id.startsWith('PLAT-') && !t.isPart && !t.isCarrier && !t.isAmrIdle).forEach(pushToken);
+    // time scale
+    let simT0=Infinity, simT1=0; tokens.forEach(t=>t.segs.forEach(s=>{ simT0=Math.min(simT0,s.t0); simT1=Math.max(simT1,s.t1);}));
+    // 목표 전체 재생시간을 선택(1/2/5분). 전체 시뮬 분(simT1-simT0)을 targetTotalMs에 매핑
+    let targetTotalMs = 60000; // 기본 1분
+    function recomputeScale(){
+      const span = Math.max(1, (simT1 - simT0));
+      minToMsBase = targetTotalMs / span; // 1 sim min 당 ms
+    }
+    let minToMsBase = 1; recomputeScale();
+    let speed = 1;
+    let playing = false;
+    let tPrev = performance.now();
+    let simNow = simT0;
+    let rainbowPhase = 0;
+    // controls
+    container.querySelector(`#${containerId}_play`).onclick = ()=>{ playing = true; tPrev = performance.now(); };
+    container.querySelector(`#${containerId}_pause`).onclick = ()=>{ playing = false; };
+    container.querySelector(`#${containerId}_restart`).onclick = ()=>{ simNow = simT0; rainbowPhase = 0; tPrev = performance.now(); };
+    container.querySelector(`#${containerId}_speed`).onchange = (e)=>{ speed = parseFloat(e.target.value||'1')||1; };
+    container.querySelector(`#${containerId}_duration`).onchange = (e)=>{ targetTotalMs = parseInt(e.target.value||'60000'); recomputeScale(); };
+    const moveMap = {
+      to_printer:['new_plat','printers'],
+      to_wash:['printers','wash1'],
+      to_wash2:['wash1','wash2'],
+      to_dry:['wash2','dry'],
+      to_uv:['dry','uv'],
+      to_stacker:['uv','stacker'],
+      to_platform_wash:['support_plat','platform_wash'],
+      to_new_platform:['platform_wash','new_plat'],
+      to_support_plat:['stacker','support_plat'],
+      to_finish:['support_part','finish'],
+      to_paint:['finish','paint'],
+      to_storage:['paint','storage'],
+      amr_return:['stacker','new_plat'],
+      manual_return:['stacker','wash1']
+    };
+    const normalizeStage = (st)=>{
+      if(!st) return '';
+      const queueSuffix = '_queue';
+      const holdSuffix = '_hold';
+      let base = st;
+      if(base.endsWith(queueSuffix)) base = base.slice(0, -queueSuffix.length);
+      if(base.endsWith(holdSuffix)) base = base.slice(0, -holdSuffix.length);
+      return base;
+    };
+    const stagePos = st => {
+      const base = normalizeStage(st);
+      return (base==='install'||base==='print'||base==='remove'||base==='unload')? pos.printers : pos[base]||pos.printers;
+    };
+    function lerp(a,b,u){ return [a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u]; }
+
+    function draw(){
+      const now = performance.now();
+      let deltaSim = 0;
+      if(playing){
+        const deltaMs = now - tPrev;
+        deltaSim = (deltaMs)/minToMsBase*speed;
+        simNow += deltaSim;
+        rainbowPhase += (deltaMs/1000) * (1.8 * speed);
+      }
+      tPrev = now;
+      // bg: day/night (work shift) visualization
+      const minutesPerDay = 24*60;
+      function inShift(min){
+        try{
+          const ws = (P.manual_ops && P.manual_ops.work_shift) || {start_hhmm:'09:00', end_hhmm:'18:00', workdays_per_month:22};
+          const hhmm = s=>{ const [h,m]=String(s).split(':'); return (+h)*60 + (+m); };
+          const start = hhmm(ws.start_hhmm), end = hhmm(ws.end_hhmm);
+          const dayMin = Math.floor(min % minutesPerDay);
+          const totalSimDays = horizonMinutes>0 ? Math.max(1, Math.ceil(horizonMinutes / minutesPerDay)) : 30;
+          const dayIdxAbs = Math.floor(min / minutesPerDay);
+          const dayIdx = totalSimDays ? (dayIdxAbs % totalSimDays) : dayIdxAbs;
+          const workdaysLimit = ws.workdays_per_month || totalSimDays || 30;
+          if(dayIdx >= workdaysLimit) return false;
+          return (dayMin>=start && dayMin<end);
+        }catch(e){ return true; }
+      }
+      const isWork = inShift(simNow);
+      const dayIndex = Math.max(0, Math.floor(simNow / minutesPerDay));
+      const totalDays = horizonMinutes>0 ? Math.max(1, Math.ceil(horizonMinutes / minutesPerDay)) : null;
+      const dayClamp = totalDays ? Math.min(dayIndex + 1, totalDays) : (dayIndex + 1);
+      const dayLabel = totalDays ? `${dayClamp}일차 / ${totalDays}일` : `${dayClamp}일차`;
+      const weekIndex = Math.floor(dayIndex / 7) + 1;
+      const dayInCycle = cycleDays > 0 ? (dayIndex % cycleDays) : dayIndex;
+      const workActive = cycleDays <= 0 ? isWork : (dayInCycle < workDays && isWork);
+      const phaseLabel = workActive ? '작업 시간' : '휴무 시간';
+      const weekdayLabel = weekdays[dayIndex % weekdays.length];
+      const workBg = theme.canvasSurface;
+      const idleBg = theme.nightBg || theme.canvasSurfaceAlt;
+      ctx.fillStyle = isWork ? workBg : idleBg;
+      ctx.fillRect(0,0,W,H);
+
+      // legend
+      ctx.fillStyle = '#f97316';
+      ctx.beginPath(); ctx.arc(60,32,6,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = theme.canvasText; ctx.font = fontPx(12);
+      ctx.fillText('플랫폼', 72,36);
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath(); ctx.arc(132,32,6,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = theme.canvasText;
+      ctx.fillText('파트', 144,36);
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath(); ctx.arc(200,32,6,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = theme.canvasText;
+      ctx.fillText('AMR', 212,36);
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath(); ctx.arc(268,32,6,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.strokeStyle=theme.accent; ctx.lineWidth=1.5; ctx.arc(268,32,6,0,Math.PI*2); ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.fillStyle = theme.canvasText;
+      ctx.fillText('운송 인력', 280,36);
+      ctx.font = fontPx(15);
+      ctx.fillStyle = theme.muted;
+      ctx.textAlign = 'left';
+      ctx.fillText(`${dayLabel} · ${weekIndex}주차 ${weekdayLabel} · ${phaseLabel}`, labelPos.x, labelPos.y);
+      ctx.font = fontPx(12);
+      ctx.textAlign = 'start';
+
+      // 1) 현재 시점 상태 계산(이동/정지)
+      const atStation = {}; // station -> array of tokens to stack
+      const states = tokens.map(t=>{
+        let seg=null; for(let i=0;i<t.segs.length;i++){ const s=t.segs[i]; if(simNow>=s.t0 && simNow<=s.t1){ seg=s; break; } }
+        if(!seg) return null;
+        const st = seg.stage; const baseStage = normalizeStage(st);
+        const moving = !!moveMap[st];
+       if(!moving){
+         // 정지 상태(스테이션 위에서 처리/대기)
+         // 스테이션 키
+         const key = (baseStage==='install'||baseStage==='print'||baseStage==='remove'||baseStage==='unload')? 'printers' : baseStage;
+          if(!t.isMover){
+            (atStation[key] = atStation[key] || []).push(t);
+          }
+         return {t, moving:false, station:key, stage:st};
+       }else{
+          // 이동 상태 → 위치 보간 계산
+          const [a,b]=moveMap[st]; const p0=pos[a], p1=pos[b];
+          const tt = Math.max(0, Math.min(1,(simNow-seg.t0)/Math.max(1e-6,(seg.t1-seg.t0))));
+          const [x,y] = lerp(p0,p1,tt);
+          return {t, moving:true, stage:st, x, y};
+        }
+      }).filter(Boolean);
+      const busySet = new Set();
+      states.forEach(s=>{
+        if(!s || s.moving) return;
+        if(!rainbowStations.has(s.station)) return;
+        const stageName = String(s.stage||'');
+        if(stageName.endsWith('_queue')) return;
+        if(s.t.isPart || s.t.isAmr || s.t.isMover) return;
+        busySet.add(s.station);
+      });
+      busyStations = busySet;
+
+      function drawRainbowFrame(p, w, h){
+        const margin = 4;
+        const radius = Math.max(w, h) * 0.55 + margin * 2;
+        const dirX = Math.cos(rainbowPhase);
+        const dirY = Math.sin(rainbowPhase);
+        const gx0 = p[0] + dirX * radius;
+        const gy0 = p[1] + dirY * radius;
+        const gx1 = p[0] - dirX * radius;
+        const gy1 = p[1] - dirY * radius;
+        const gradient = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+        rainbowColors.forEach((color, idx)=>{
+          gradient.addColorStop(idx/(rainbowColors.length-1), color);
+        });
+        ctx.save();
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(p[0]-w/2-margin, p[1]-h/2-margin, w+margin*2, h+margin*2);
+        ctx.restore();
+      }
+      function drawBox(key, label){
+        const dim = stageDim[key] || {w:90,h:26};
+        const p = pos[key];
+        const w = dim.w;
+        const h = dim.h;
+        if(key && busyStations.has(key)){
+          drawRainbowFrame(p,w,h);
+        }
+        const stationFill = isWork ? theme.canvasStation : (theme.canvasStationNight || theme.canvasStation);
+        ctx.fillStyle = stationFill;
+        ctx.fillRect(p[0]-w/2,p[1]-h/2,w,h);
+        ctx.fillStyle = theme.canvasText;
+        ctx.font = fontPx(12, '600');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(label, p[0], p[1]+h/2+6);
+        ctx.textAlign = 'start';
+        ctx.textBaseline = 'alphabetic';
+      }
+      drawBox('new_plat','신규플랫폼');
+      drawBox('printers','프린터');
+      drawBox('platform_wash','플랫폼 세척');
+      drawBox('wash1','세척1');
+      drawBox('wash2','세척2');
+      drawBox('dry','건조');
+      drawBox('uv','UV');
+      drawBox('stacker','스택커');
+      drawBox('support_plat','플랫폼 서포트');
+      drawBox('support_part','파트 서포트');
+      drawBox('finish','사상');
+      drawBox('paint','페인팅');
+      drawBox('storage','보관');
+
+      const movingStages = new Set(Object.keys(moveMap));
+      const carrierOverlay = new Map();
+      states.forEach(s=>{
+        if(!s.moving) return;
+        if(!movingStages.has(s.stage)) return;
+        const base = s.t.baseId || s.t.id;
+        if(!carrierOverlay.has(s.stage)) carrierOverlay.set(s.stage, new Map());
+        const stageMap = carrierOverlay.get(s.stage);
+        const rec = stageMap.get(base) || {carriers:[], cargo:null};
+        if(s.t.isCarrier){
+          rec.carriers.push(s);
+        }else if(!s.t.isPart){
+          rec.cargo = s;
+        }
+        stageMap.set(base, rec);
+      });
+
+      const drawnIds = new Set();
+      carrierOverlay.forEach(stageMap=>{
+        stageMap.forEach(rec=>{
+          if(rec.carriers.length===0 && !rec.cargo) return;
+          const anchor = rec.cargo || rec.carriers[0];
+          if(!anchor) return;
+          const x = anchor.x, y = anchor.y;
+          const hasCargo = !!rec.cargo;
+          rec.carriers.forEach(carrierState=>{
+            if(carrierState.t.isAmr){
+              ctx.save(); ctx.globalAlpha=0.88; ctx.beginPath(); ctx.fillStyle='#fde047'; ctx.arc(x,y,9,0,Math.PI*2); ctx.fill(); ctx.restore();
+              ctx.beginPath(); ctx.strokeStyle='#facc15'; ctx.lineWidth=2; ctx.arc(x,y,9,0,Math.PI*2); ctx.stroke();
+            }else if(carrierState.t.isMover){
+              if(hasCargo){
+                ctx.beginPath(); ctx.strokeStyle='#60a5fa'; ctx.lineWidth=3; ctx.arc(x,y,8,0,Math.PI*2); ctx.stroke();
+              }else{
+                ctx.save(); ctx.globalAlpha=0.82; ctx.beginPath(); ctx.fillStyle='#3b82f6'; ctx.arc(x,y,7,0,Math.PI*2); ctx.fill(); ctx.restore();
+                ctx.beginPath(); ctx.strokeStyle='#60a5fa'; ctx.lineWidth=2; ctx.arc(x,y,7,0,Math.PI*2); ctx.stroke();
+              }
+            }else{
+              ctx.save(); ctx.globalAlpha=0.82; ctx.beginPath(); ctx.fillStyle=carrierState.t.color; ctx.arc(x,y,6,0,Math.PI*2); ctx.fill(); ctx.restore();
+            }
+            drawnIds.add(carrierState.t.id);
+          });
+          ctx.lineWidth = 1;
+          if(rec.cargo && !drawnIds.has(rec.cargo.t.id)){
+            const cargoRadius = rec.carriers.some(c=>c.t.isMover) ? 5.5 : 5;
+            ctx.save(); ctx.globalAlpha=0.82; ctx.beginPath(); ctx.fillStyle=rec.cargo.t.color; ctx.arc(x,y,cargoRadius,0,Math.PI*2); ctx.fill(); ctx.restore();
+            drawnIds.add(rec.cargo.t.id);
+          }else if(!rec.cargo){
+            const hasAmr = rec.carriers.some(c=>c.t.isAmr);
+            const hasMover = rec.carriers.some(c=>c.t.isMover);
+            if(hasAmr){
+              ctx.save(); ctx.globalAlpha=0.8; ctx.beginPath(); ctx.fillStyle='#fde68a'; ctx.arc(x,y,3.5,0,Math.PI*2); ctx.fill(); ctx.restore();
+            }else if(hasMover){
+              ctx.save(); ctx.globalAlpha=0.8; ctx.beginPath(); ctx.fillStyle='#bfdbfe'; ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); ctx.restore();
+            }
+          }
+        });
+      });
+      ctx.strokeStyle = theme.canvasText;
+
+      // 2) 이동 토큰 그리기
+      const trailSpan = 5;
+      const trailAlpha = 0.3;
+      const trailRadiusFactor = 1.4;
+      const trailMap = new Map();
+      tokens.forEach(t=>{ trailMap.set(t.id, {color:t.color, radius:tokenRadius(t)}); });
+      tokens.forEach(t=>{
+        const meta = trailMap.get(t.id);
+        const segments = t.segs.slice(-trailSpan);
+        segments.forEach(seg=>{
+          if(seg.t1 <= simNow) return;
+          const total = seg.t1 - seg.t0;
+          if(total <= 0) return;
+          const progress = (simNow - seg.t0) / total;
+          if(progress < 0 || progress > 1) return;
+          const move = moveMap[seg.stage];
+          if(!move) return;
+          const [stageFrom, stageTo] = move;
+          const p0 = pos[stageFrom];
+          const p1 = pos[stageTo];
+          if(!p0 || !p1) return;
+          const x = p0[0] + (p1[0]-p0[0])*progress;
+          const y = p0[1] + (p1[1]-p0[1])*progress;
+          ctx.save();
+          ctx.globalAlpha = trailAlpha * (1 - Math.abs(0.5 - progress));
+          ctx.beginPath(); ctx.fillStyle=meta.color; ctx.arc(x,y,meta.radius*trailRadiusFactor,0,Math.PI*2); ctx.fill();
+          ctx.restore();
+        });
+      });
+
+      states.filter(s=>s && s.moving).forEach(s=>{
+        if(drawnIds.has(s.t.id)) return;
+        const radius = tokenRadius(s.t);
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.fillStyle=s.t.color; ctx.arc(s.x,s.y,radius,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      });
+
+      // 3) 스테이션 정지 토큰을 장비 대수만큼 분할하여 위로 쌓기
+      const workerCount = Number((P?.manual_ops?.workers) || 1) || 1;
+      const defaults = {
+        new_plat: 1,
+        stacker: 1,
+        printers: (P?.print?.printer_count || P?.print?.printers?.length || 2),
+        wash_m1: (P?.auto_post?.washers_m1||1),
+        wash_m2: (P?.auto_post?.washers_m2||1),
+        platform_wash: (P?.platform_clean?.washers||1),
+        dryers: (P?.auto_post?.dryers||1),
+        uv_units: (P?.auto_post?.uv_units||1),
+        support_plat: workerCount,
+        support_part: workerCount,
+        finish: workerCount,
+        paint: workerCount
+      };
+      const counts = Object.assign({}, defaults, window.__ANIM_CFG__ || {});
+      const stackGap = 8;
+      const maxVisibleBase = 220;
+      const manualKeys = new Set(['support_plat','support_part','finish','paint']);
+      function drawStackFor(key, list, machineCount, anchor){
+        if(!list || !list.length) return;
+        const machineTotal = Math.max(1, machineCount);
+        const enriched = list.map(t=>{
+          const seg = t.segs.find(s=> (s.t0<=simNow && simNow<=s.t1));
+          return {t, arr:(seg? seg.t0:0)};
+        }).sort((a,b)=>a.arr-b.arr);
+        let lanePositions = [];
+        if(manualKeys.has(key)){
+          const rows = machineTotal > 5 ? 2 : 1;
+          const spacingX = 28;
+          const spacingY = 26;
+          const perRow = Math.ceil(machineTotal / rows);
+          let idx = 0;
+          for(let row=0; row<rows; row++){
+            const remaining = machineTotal - row*perRow;
+            const itemsThisRow = Math.min(perRow, Math.max(0, remaining));
+            if(itemsThisRow<=0) break;
+            const startX = anchor[0] - ((itemsThisRow-1) * spacingX)/2;
+            const rowY = anchor[1] + (row - (rows-1)/2) * spacingY;
+            for(let colIdx=0; colIdx<itemsThisRow; colIdx++){
+              lanePositions[idx++] = {x:startX + colIdx*spacingX, y:rowY};
+            }
+          }
+        }else{
+          const spacing = 32;
+          const startY = anchor[1] - (machineTotal-1)*spacing/2;
+          for(let i=0;i<machineTotal;i++){
+            lanePositions.push({x:anchor[0], y:startY + i*spacing});
+          }
+        }
+        if(lanePositions.length === 0){
+          lanePositions = [{x:anchor[0], y:anchor[1]}];
+        }
+        const laneCount = lanePositions.length;
+        const lanes = Array.from({length:laneCount}, ()=>[]);
+        enriched.forEach((e)=>{
+          let minIdx = 0; for(let i=1;i<laneCount;i++){ if(lanes[i].length < lanes[minIdx].length) minIdx=i; }
+          lanes[minIdx].push(e.t);
+        });
+        const machineFill = isWork ? theme.canvasStation : (theme.canvasStationNight || theme.canvasStation);
+        for(let i=0;i<laneCount;i++){
+          const center = lanePositions[i];
+          const isManual = manualKeys.has(key);
+          const dim = stageDim[key] || {w:44,h:20};
+          const boxW = isManual ? Math.max(34, dim.w * 0.4) : Math.max(36, dim.w * 0.5);
+          const boxH = isManual ? Math.max(16, dim.h * 0.5) : Math.max(18, dim.h * 0.7);
+        ctx.fillStyle = machineFill;
+        ctx.fillRect(center.x - boxW/2, center.y - boxH/2, boxW, boxH);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = isManual ? 1 : 0.8;
+        ctx.strokeRect(center.x - boxW/2, center.y - boxH/2, boxW, boxH);
+        const isStorage = key === 'storage';
+        const show = isStorage ? lanes[i] : lanes[i].slice(-maxVisibleBase);
+        const perColumn = isStorage ? 50 : 20;
+        const columnSpacing = isStorage ? 9 : (isManual ? 10 : 12);
+        const columns = Math.max(1, Math.ceil(show.length / perColumn));
+        const baseX = isStorage
+          ? (pos.storage[0] - (stageDim.storage?.w || 90)/2 - 12)
+          : center.x - (columns - 1) * columnSpacing * 0.5;
+        const localStackGap = isStorage ? 6 : stackGap;
+        const baseY = center.y - boxH/2 - (isStorage ? 10 : 8);
+        show.forEach((t,idx)=>{
+          const column = Math.floor(idx / perColumn);
+          const row = idx % perColumn;
+          const x = baseX + column*columnSpacing;
+          const y = baseY - row*localStackGap;
+          const radius = tokenRadius(t);
+            ctx.save();
+            ctx.globalAlpha = isStorage ? 0.75 : 0.82;
+            ctx.beginPath(); ctx.fillStyle=t.color; ctx.arc(x,y,radius,0,Math.PI*2); ctx.fill();
+            ctx.restore();
+          });
+          ctx.save();
+          ctx.fillStyle=theme.canvasText;
+          ctx.font=fontPx(10, '600');
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${lanes[i].length}`, center.x, center.y);
+          ctx.restore();
+        }
+      }
+      // 각 스테이션 처리
+      drawStackFor('new_plat', atStation['new_plat']||[], counts.new_plat||1, pos.new_plat);
+      drawStackFor('stacker',  atStation['stacker']||[],  counts.stacker||1,  pos.stacker);
+      drawStackFor('printers', atStation['printers']||[], counts.printers, pos.printers);
+      drawStackFor('wash1',    atStation['wash1']||[],    counts.wash_m1, pos.wash1);
+      drawStackFor('wash2',    atStation['wash2']||[],    counts.wash_m2, pos.wash2);
+      drawStackFor('dry',      atStation['dry']||[],      counts.dryers,  pos.dry);
+      drawStackFor('uv',       atStation['uv']||[],       counts.uv_units,pos.uv);
+      drawStackFor('support_plat',  atStation['support_plat']||[],  counts.support_plat || workerCount, pos.support_plat);
+      drawStackFor('support_part',  atStation['support_part']||[],  counts.support_part || workerCount, pos.support_part);
+      drawStackFor('finish',   atStation['finish']||[],   counts.finish || workerCount,  pos.finish);
+      drawStackFor('paint',    atStation['paint']||[],    counts.paint || workerCount,   pos.paint);
+      // storage (completed parts)
+      drawStackFor('storage',  atStation['storage']||[],  1,              pos.storage);
+
+      // Overlays: Support platform backlog and per-worker approx assignment, Storage count
+      // platform-level backlog
+      const stackerWaiting = (atStation['stacker']||[]).length;
+      ctx.fillStyle = theme.text; ctx.font = fontPx(11, '600');
+      ctx.fillText(`큐:${stackerWaiting}`, pos.stacker[0] + stageDim.stacker.w/2 + 10, pos.stacker[1]-6);
+
+      const suppPlatList = atStation['support_plat']||[];
+      const suppPlatSet = new Set();
+      suppPlatList.forEach(t=>{ const b=t.id.includes('-P')? t.id.split('-P')[0] : t.id; suppPlatSet.add(b); });
+      const suppPlatforms = suppPlatSet.size;
+      ctx.fillStyle = theme.text; ctx.font = fontPx(11, '600');
+      ctx.fillText(`PL:${suppPlatforms}`, pos.support_plat[0] + stageDim.support_plat.w/2 + 10, pos.support_plat[1]-6);
+      // part-level approx per worker based on platform backlog and capacity
+      const capPerPlat = Number((P.print && P.print.max_parts_per_platform) || 0) || 0;
+      const approxParts = suppPlatforms * capPerPlat;
+      const perWorker = Math.ceil(approxParts / Math.max(1, workerCount));
+      ctx.fillStyle = theme.text; ctx.font = fontPx(11, '600');
+      ctx.fillText(`~perW:${perWorker}`, pos.support_part[0] + stageDim.support_part.w/2 + 10, pos.support_part[1]-6);
+
+      const stored = (atStation['storage']||[]).length;
+      const targetStored = opts.totalParts ?? null;
+      ctx.save();
+      ctx.fillStyle = theme.text; ctx.font = fontPx(12, '600');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const label = targetStored != null && targetStored !== undefined ? `${stored}/${targetStored}` : `${stored}`;
+      ctx.fillText(label, pos.storage[0], pos.storage[1] + stageDim.storage.h/2 + 6);
+      ctx.restore();
+
+      // loop playback when end reached
+      if(simNow>simT1) simNow = simT0;
+      requestAnimationFrame(draw);
+    }
+    draw();
+  }
+  function cycleBreakdown(P, mode){
+    const parts = Number(P.print.max_parts_per_platform||0);
+    // preproc
+    const pre = Number(P.preproc.healing_time_per_platform_min||0) + Number(P.preproc.placement_time_per_platform_min||0) + Number(P.preproc.support_time_per_platform_min||0);
+    const print = Number(P.print.t_print_per_platform_min||0);
+    let post = 0;
+    if(mode==='automated'){
+      const ap=P.auto_post; const amr=(d)=> (Number(d||0)/Number(ap.amr_speed_m_per_s||1))/60 + Number(ap.amr_load_min||0) + Number(ap.amr_unload_min||0);
+      const clean = amr(ap.dist_m.support_to_platform_wash) + Number((P.platform_clean?.wash_time_min)||0) + amr(ap.dist_m.platform_wash_to_new);
+      post = amr(ap.dist_m.printer_to_wash) + Number(ap.t_wash1_min||0) + amr(ap.dist_m.wash_to_dry) + Number(ap.t_wash2_min||0) + Number(ap.t_dry_min||0) + amr(ap.dist_m.dry_to_uv) + Number(ap.t_uv_min||0) + amr(ap.dist_m.uv_to_stacker) + clean;
+    }else{
+      const mp=P.manual_post; const ap=P.auto_post; const mm=P.manual_move||{};
+      const speed = Math.max(Number(mm.speed_m_per_s||2.0), 1e-6);
+      const distMap = mm.dist_m||{};
+      const fallbackKey = r => ({wash1_to_wash2:'wash_to_dry'}[r]||r);
+      const travel = (route, override)=>{
+        if(override !== undefined && override !== null && Number(override) > 0){
+          return Number(override);
+        }
+        const distRaw = distMap[route] ?? (ap.dist_m?.[fallbackKey(route)] ?? 0);
+        const dist = Number(distRaw||0);
+        if(dist<=0) return 0;
+        return (dist / speed) / 60;
+      };
+      const clean = travel('support_to_platform_wash', mp.to_platform_wash_travel_min)
+        + Number((P.platform_clean?.wash_time_min)||0)
+        + travel('platform_wash_to_new', mp.to_newplatform_travel_min);
+      post = Number(mp.human_unload_min||0)
+        + travel('printer_to_wash', mp.to_washer_travel_min)
+        + Number(ap.t_wash1_min||0)
+        + travel('wash1_to_wash2', mp.to_wash2_travel_min)
+        + Number(ap.t_wash2_min||0)
+        + travel('wash_to_dry', mp.to_dryer_travel_min)
+        + Number(ap.t_dry_min||0)
+        + travel('uv_to_stacker', mp.to_stacker_travel_min)
+        + Number(ap.t_uv_min||0)
+        + clean;
+    }
+    const ops = Number(P.manual_ops.support_time_per_platform_min||0)
+      + Number(P.manual_ops.move_platform_to_support_min||0)
+      + Number(P.manual_ops.support_time_per_part_min||0)*parts
+      + (Number(P.manual_ops.move_support_to_finish_min||0) * parts)
+      + Number(P.manual_ops.finish_time_per_part_min||0)*parts
+      + (Number(P.manual_ops.move_finish_to_paint_min||0) * parts)
+      + Number(P.manual_ops.paint_time_per_part_min||0)*parts
+      + (Number(P.manual_ops.move_paint_to_storage_min||0) * parts);
+    const total = pre+print+post+ops;
+    return {pre, print, post, ops, total};
+  }
+  function cycleSvg(b){
+    const W=860,H=120,unit= (W-180)/Math.max(1, Number(b.total||0)); let x=80;
+    function seg(w,color,label){
+      const ww=Math.max(4,w*unit);
+      const g=`<g><rect x="${x}" y="36" width="${ww}" height="28" fill="${color}" rx="8"/>
+      <text x="${x+8}" y="56" font-size="14" fill="var(--cycle-text)" font-weight="600">${label}</text></g>`;
+      x+=ww+10;
+      return g;
+    }
+    const svg = seg(b.pre,'var(--cycle-pre)',`전처리 ${b.pre.toFixed(0)}m`) + seg(b.print,'var(--cycle-print)',`프린팅 ${b.print.toFixed(0)}m`) + seg(b.post,'var(--cycle-post)',`후처리 ${b.post.toFixed(0)}m`) + seg(b.ops,'var(--cycle-ops)',`수작업 ${b.ops.toFixed(0)}m`);
+    const ttl = (Number(b.total||0)/60).toFixed(2);
+    return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}"><text x="0" y="24" font-size="14" fill="var(--muted)">총 ${ttl} 시간/빌드플랫폼</text>${svg}</svg></div>`;
+  }
+  const ba = cycleBreakdown(P,'automated');
+  const bm = cycleBreakdown(P,'manual');
+  if(!m){
+    document.getElementById('out').innerHTML = `
+      <div class="card"><h3>결과(자동화)</h3>
+        ${tbl(a)}
+        ${utilTbl(utilA)}
+        ${costTbl(a.cost)}
+        <h4>자원별 대기시간</h4>
+        ${waitTbl(a.wait_stats)}
+        <h4>공정 레이아웃</h4>
+        ${layoutA}
+        <h4>한 사이클(빌드플랫폼 1개) 시간 분해</h4>
+        ${cycleSvg(ba)}
+        <h4>2D Animation</h4>
+        <div id="viz2dA" style="height:520px"></div>
+      </div>`;
+    window.__ANIM_CFG__ = {
+      new_plat: 1,
+      stacker: 1,
+      printers: (P.print?.printer_count || P.print?.printers?.length || 2),
+      wash_m1:(P.auto_post?.washers_m1||1),
+      wash_m2:(P.auto_post?.washers_m2||1),
+      platform_wash:(P.platform_clean?.washers||1),
+      dryers:(P.auto_post?.dryers||1),
+      uv_units:(P.auto_post?.uv_units||1),
+      support_plat:(P.manual_ops?.workers||2),
+      support_part:(P.manual_ops?.workers||2),
+      finish:(P.manual_ops?.workers||2),
+      paint:(P.manual_ops?.workers||2)
+    };
+    renderFactory2D('viz2dA', a.trace, { totalParts: a.completed_parts, automated: true, horizonMinutes: a.horizon_minutes });
+  } else {
+    document.getElementById('out').innerHTML = `
+      <div class="card"><h3>결과 비교: 자동화 vs 비자동화</h3>
+        <div class="grid">
+          <div>
+            <h4>자동화</h4>
+            ${tbl(a)}
+            ${utilTbl(utilA)}
+            ${costTbl(a.cost)}
+            <h4>자원별 대기시간</h4>
+            ${waitTbl(a.wait_stats)}
+            <h4>공정 레이아웃</h4>
+            ${layoutA}
+            <h4>한 사이클(빌드플랫폼 1개) 시간 분해</h4>
+            ${cycleSvg(ba)}
+          </div>
+          <div>
+            <h4>비자동화</h4>
+            ${tbl(m)}
+            ${utilTbl(utilM)}
+            ${costTbl(m.cost)}
+            <h4>자원별 대기시간</h4>
+            ${waitTbl(m.wait_stats)}
+            <h4>공정 레이아웃</h4>
+            ${layoutM}
+            <h4>한 사이클(빌드플랫폼 1개) 시간 분해</h4>
+            ${cycleSvg(bm)}
+          </div>
+        </div>
+        <h4 style="margin-top:12px">2D Animation</h4>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <label><input type="radio" name="anim_mode" value="automated" checked> 자동화</label>
+          <label><input type="radio" name="anim_mode" value="manual"> 비자동화</label>
+        </div>
+        <div id="viz2d" style="height:520px"></div>
+      </div>`;
+    window.__ANIM_CFG__ = {
+      new_plat: 1,
+      stacker: 1,
+      printers: (P.print?.printer_count || P.print?.printers?.length || 2),
+      wash_m1:(P.auto_post?.washers_m1||1),
+      wash_m2:(P.auto_post?.washers_m2||1),
+      platform_wash:(P.platform_clean?.washers||1),
+      dryers:(P.auto_post?.dryers||1),
+      uv_units:(P.auto_post?.uv_units||1),
+      support_plat:(P.manual_ops?.workers||2),
+      support_part:(P.manual_ops?.workers||2),
+      finish:(P.manual_ops?.workers||2),
+      paint:(P.manual_ops?.workers||2)
+    };
+    // default to automated animation
+    renderFactory2D('viz2d', a.trace, { totalParts: a.completed_parts, automated: true, horizonMinutes: a.horizon_minutes });
+    // toggle between automated/manual traces
+    document.querySelectorAll('input[name="anim_mode"]').forEach(el=>{
+      el.addEventListener('change', (e)=>{
+        const mode = e.target.value;
+        const trace = mode==='manual'? m.trace : a.trace;
+        // rerender in same container
+        const info = mode==='manual'? m : a;
+        renderFactory2D('viz2d', trace, { totalParts: info.completed_parts, automated: (mode==='automated'), horizonMinutes: info.horizon_minutes });
+      });
+    });
+  }
+}
+
+
+// ---- 2D Animation (des_factory_web style) ----
+try{
+  const trace = (data && (data.trace || data.trace_events || data.traceEvents)) || [];
+  // flow_mode가 없을 수도 있으니 기본은 automated로
+  const automated = (data && (data.flow_mode === 'automated')) || true;
+  const horizonMinutes = Number(data && (data.horizon_minutes || data.sim_duration_min || data.sim_time_min || 0)) || 0;
+  renderFactory2D('viz2d', trace, { automated, horizonMinutes, totalParts: data && data.completed_parts });
+}catch(e){
+  console.warn('2D animation render failed:', e);
+}
+
+</script>
 
 <style>
 body { font-family: Pretendard, sans-serif; margin:20px; }
@@ -52,6 +1265,15 @@ pre { background:#f4f4f4; padding:10px; max-height:300px; overflow:auto; }
   <div class="notice">
     result.trace_events 에 기록된 Printer / Wash / Dry / UV / AMR / Worker 사용시간을 자원별 타임라인으로 시각화합니다.
   </div>
+
+<div class="card">
+  <h2>2D Animation</h2>
+  <div id="viz2d" style="height:520px; width:100%"></div>
+  <div style="margin-top:8px; font-size:12px; color:#666">
+    ※ trace 데이터가 없으면 애니메이션이 표시되지 않습니다.
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -77,7 +1299,7 @@ const result = sim && sim.result ? sim.result : {};
 
   let html = "<ul>";
   for(const [k,v] of Object.entries(kpi)){
-    if(typeof v === "object") continue; // utilization 같은 nested dict는 여기선 스킵
+    if(typeof v === "object") continue;
     html += `<li><b>${k}</b>: ${v}</li>`;
   }
   html += "</ul>";
@@ -106,13 +1328,7 @@ const result = sim && sim.result ? sim.result : {};
     }
   });
 
-  const trace = {
-    x: t,
-    y: wip,
-    mode: "lines+markers",
-    name: "Stacker WIP"
-  };
-
+  const trace = { x: t, y: wip, mode: "lines+markers", name: "Stacker WIP" };
   Plotly.newPlot(div, [trace], {
     title: "Stacker WIP over Time",
     xaxis: { title: "Time (min)" },
@@ -130,7 +1346,6 @@ const result = sim && sim.result ? sim.result : {};
     return;
   }
 
-  // route 명을 from / to 로 나누기 ("printer_to_wash1" → "printer", "wash1")
   const fromSet = new Set();
   const toSet = new Set();
   const routeEntries = [];
@@ -156,7 +1371,6 @@ const result = sim && sim.result ? sim.result : {};
   const fromList = Array.from(fromSet);
   const toList = Array.from(toSet);
 
-  // 2D matrix [from][to]
   const z = fromList.map(() => toList.map(() => 0));
   routeEntries.forEach(e => {
     const i = fromList.indexOf(e.from);
@@ -198,12 +1412,7 @@ const result = sim && sim.result ? sim.result : {};
     return typeof v === "number" ? v : parseFloat(v) || 0;
   });
 
-  const trace = {
-    x: stages,
-    y: counts,
-    type: "bar"
-  };
-
+  const trace = { x: stages, y: counts, type: "bar" };
   Plotly.newPlot(div, [trace], {
     title: "Scrap 발생 위치 / 빈도",
     xaxis: { title: "Stage" },
@@ -223,28 +1432,21 @@ const result = sim && sim.result ? sim.result : {};
     return;
   }
 
-  // 자원(Resource) 목록 추출
-  const resources = Array.from(
-    new Set(
-      traceEvents.map(ev => ev.Resource || ev.stage || "Unknown")
-    )
-  );
-
+  const resources = Array.from(new Set(traceEvents.map(ev => ev.Resource || ev.stage || "Unknown")));
   const data = [];
 
-  // 자원(Resource)별로 하나의 trace (수평 bar) 생성
   resources.forEach(res => {
     const evs = traceEvents.filter(ev => (ev.Resource || ev.stage || "Unknown") === res);
 
-    const x = [];      // duration (t1 - t0)
-    const base = [];   // 시작 시간 t0
-    const y = [];      // y축은 전부 같은 자원 이름
-    const text = [];   // hover text
+    const x = [];
+    const base = [];
+    const y = [];
+    const text = [];
 
     evs.forEach(ev => {
       const t0 = parseFloat(ev.t0 || 0);
       const t1 = parseFloat(ev.t1 || 0);
-      const dur = Math.max(t1 - t0, 0.001); // 0 길이 방지
+      const dur = Math.max(t1 - t0, 0.001);
 
       x.push(dur);
       base.push(t0);
@@ -269,14 +1471,8 @@ const result = sim && sim.result ? sim.result : {};
   const layout = {
     title: "Factory Resource Gantt (Timeline)",
     barmode: "stack",
-    xaxis: {
-      title: "Time (min)",
-      rangemode: "nonnegative"
-    },
-    yaxis: {
-      title: "Resource",
-      automargin: true
-    },
+    xaxis: { title: "Time (min)", rangemode: "nonnegative" },
+    yaxis: { title: "Resource", automargin: true },
     margin: {l: 120, r: 20, t: 40, b: 40}
   };
 

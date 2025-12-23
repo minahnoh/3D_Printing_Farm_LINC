@@ -12,20 +12,19 @@ class KPI:
     # Production counts
     completed_parts: int = 0
     scrapped_parts: int = 0
+    started_platforms: int = 0
     completed_platforms: int = 0
     started_parts: int = 0
-    started_platforms: int = 0
 
-
-    # Resource busy times (minutes)
+    # Busy time accumulators (minutes)
+    preproc_busy_min: float = 0.0
+    print_busy_min: float = 0.0
     printer_busy_min: float = 0.0
     wash1_busy_min: float = 0.0
     wash2_busy_min: float = 0.0
     dry_busy_min: float = 0.0
     uv_busy_min: float = 0.0
-    amr_travel_min: float = 0.0
     platform_wash_busy_min: float = 0.0
-    preproc_busy_min: float = 0.0
     manual_busy_min: float = 0.0
     pre_manual_busy_min: float = 0.0
 
@@ -37,6 +36,7 @@ class KPI:
     n_preproc_jobs: int = 0
     n_print_jobs: int = 0
     n_amr_moves: int = 0
+    amr_travel_min: float = 0.0
 
     # Wait-time statistics
     wait_sum: Dict[str, float] = field(default_factory=dict)
@@ -48,6 +48,10 @@ class KPI:
     finished_platforms: int = 0
     max_stacker_wip: int = 0
 
+    # Extra metrics for web UI
+    scrap_by_stage: Dict[str, int] = field(default_factory=dict)
+    amr_route_counts: Dict[str, int] = field(default_factory=dict)
+    stacker_wip_history: list = field(default_factory=list)
 
     def add_wait(self, key: str, w: float) -> None:
         """
@@ -57,15 +61,36 @@ class KPI:
         """
         if w is None:
             return
+        w = float(w)
         self.wait_sum[key] = self.wait_sum.get(key, 0.0) + w
-        self.wait_max[key] = max(self.wait_max.get(key, 0.0), w)
         self.req_count[key] = self.req_count.get(key, 0) + 1
+        self.wait_max[key] = max(self.wait_max.get(key, 0.0), w)
 
+    def add_scrap(self, stage: str, count: int) -> None:
+        """Accumulate scrap count by logical stage name."""
+        if not stage:
+            stage = "unknown"
+        c = int(max(0, count or 0))
+        if c <= 0:
+            return
+        self.scrap_by_stage[stage] = int(self.scrap_by_stage.get(stage, 0) + c)
 
-    # Export helper
+    def add_amr_route(self, route_key: str, n: int = 1) -> None:
+        """Accumulate AMR route traversal counts."""
+        if not route_key:
+            route_key = "unknown"
+        self.amr_route_counts[route_key] = int(self.amr_route_counts.get(route_key, 0) + int(n or 0))
+
+    def record_stacker_wip(self, t_min: float, wip: int) -> None:
+        """Append stacker WIP time series for web plotting."""
+        try:
+            self.stacker_wip_history.append({"t": float(t_min), "wip": int(wip)})
+        except Exception:
+            pass
+
     def to_dict(self, horizon_min: float, caps: Dict[str, int]) -> Dict[str, Any]:
         """
-        Convert the collected KPIs into a JSON-friendly dictionary.
+        Convert KPI into a JSON-friendly dict.
 
         horizon_min : total simulation time (minutes).
         caps        : capacity information per resource type, e.g.
@@ -97,40 +122,38 @@ class KPI:
         yield_final = (
             self.completed_parts / total_parts
             if total_parts > 0
-            else None
+            else 0.0
         )
 
         avg_lead_time = (
-            self.sum_platform_lead_time_min / self.finished_platforms
-            if self.finished_platforms > 0
+            self.sum_platform_lead_time_min / completed_plats
+            if completed_plats > 0
             else None
         )
 
-        wait_stats = {
-            k: {
-                "avg_min": (self.wait_sum[k] / max(1, self.req_count.get(k, 0))),
-                "max_min": self.wait_max.get(k, 0.0),
-                "req": self.req_count.get(k, 0),
+        wait_stats = {}
+        for k, s in self.wait_sum.items():
+            n = self.req_count.get(k, 0)
+            wait_stats[k] = {
+                "avg": (s / n) if n > 0 else None,
+                "max": self.wait_max.get(k, None),
+                "n": n,
             }
-            for k in self.wait_sum.keys()
-        }
 
         return {
-            "completed_parts": self.completed_parts,
-            "scrapped_parts": self.scrapped_parts,
-            "started_parts": self.started_parts,
-            "started_platforms": self.started_platforms,
-            "completed_platforms": completed_plats,
-            "yield_final": yield_final,
+            "completed_parts": int(self.completed_parts),
+            "scrapped_parts": int(self.scrapped_parts),
+            "completed_platforms": int(self.completed_platforms),
+            "finished_platforms": int(self.finished_platforms),
+            "yield_final": round(float(yield_final), 4),
             "utilization": {
-                "printers":        util(self.printer_busy_min,       caps.get("printers", 1)),
-                "wash_m1":         util(self.wash1_busy_min,         caps.get("wash_m1", 0)),
-                "wash_m2":         util(self.wash2_busy_min,         caps.get("wash_m2", 0)),
+                "preproc":         util(self.preproc_busy_min,       caps.get("preproc_servers", 1)),
+                "printers":        util(self.print_busy_min,         caps.get("printers", 1)),
+                "wash_m1":         util(self.wash1_busy_min,         caps.get("wash_m1", 1)),
+                "wash_m2":         util(self.wash2_busy_min,         caps.get("wash_m2", 1)),
                 "dryers":          util(self.dry_busy_min,           caps.get("dryers", 1)),
                 "uv_units":        util(self.uv_busy_min,            caps.get("uv_units", 1)),
-                "amr":             util(self.amr_travel_min,         caps.get("amr", 1)),
                 "platform_wash":   util(self.platform_wash_busy_min, caps.get("platform_washers", 1)),
-                "preproc":         util(self.preproc_busy_min,       caps.get("preproc_servers", 1)),
                 "manual_workers":  util(self.manual_busy_min,        caps.get("manual_workers", 1)),
                 "manual_movers":   util(self.pre_manual_busy_min,    caps.get("manual_movers", 1)),
             },
@@ -144,4 +167,7 @@ class KPI:
                 "amr_moves": self.n_amr_moves,
             },
             "wait_stats": wait_stats,
+            "scrap_by_stage": dict(self.scrap_by_stage),
+            "amr_route_counts": dict(self.amr_route_counts),
+            "stacker_wip_history": list(self.stacker_wip_history),
         }

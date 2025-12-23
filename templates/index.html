@@ -112,42 +112,274 @@
             }
         };
     }
+
+    function fillDefaults() {
+        const set = (id, v) => {
+            const el = document.getElementById(id);
+            if(!el) return;
+            if(el.type === "checkbox") el.checked = !!v;
+            else el.value = v;
+        };
+
+        // Demand
+        set("sim_duration", 4320);
+        set("order_cycle", 120);
+        set("patients_min", 1);
+        set("patients_max", 3);
+        set("items_min", 1);
+        set("items_max", 3);
+        set("order_due", 0);
+
+        // Material
+        set("mat_weight", 50);
+        set("mat_resin_cost", 30000);
+        set("mat_pallet_limit", 50);
+        set("mat_initial_plat", 6);
+
+        // Printing
+        set("print_cnt", 3);
+        set("print_time", 1400);
+        set("print_defect", 0.02);
+        set("print_breakdown", false);
+        set("print_mtbf", 20000);
+        set("print_mttr", 240);
+        set("print_maint_cycle", 168);
+        set("print_maint_dur", 180);
+
+        // Preprocess
+        set("pre_heal", 10);
+        set("pre_place", 30);
+        set("pre_support", 120);
+        set("pre_transfer", "amr");
+
+        // Platform clean
+        set("plat_washer_cnt", 1);
+        set("plat_clean_time", 30);
+
+        // Auto-post common
+        set("w1_cnt", 1); set("w1_time", 20);
+        set("w2_cnt", 1); set("w2_time", 20);
+        set("dry_cnt", 1); set("dry_time", 30);
+        set("uv_cnt", 1); set("uv_time", 20);
+        set("def_w1", 0.01); set("def_w2", 0.0);
+        set("def_dry", 0.01); set("def_uv", 0.01);
+
+        // AMR
+        set("amr_cnt", 2);
+        set("amr_speed", 1.2);
+        set("amr_load", 2);
+        set("amr_unload", 2);
+        set("dist_pw1", 30);
+        set("dist_w1w2", 10);
+        set("dist_w2d", 20);
+        set("dist_duv", 15);
+        set("amr_shift", false);
+
+        // Manual transport
+        set("man_cnt", 2);
+        set("man_speed", 1.0);
+        set("man_pw1", 30);
+        set("man_w1w2", 10);
+        set("man_w2d", 20);
+        set("man_duv", 15);
+        set("man_shift_s", "09:00");
+        set("man_shift_e", "18:00");
+        set("man_workdays", 7);
+
+        // Manual post
+        set("mp_sup", 10);
+        set("mp_finish", 5);
+        set("mp_paint", 5);
+        set("mp_move", 1);
+
+        // Stacker
+        set("stk_enabled", true);
+        set("stk_wip", 20);
+        set("stk_policy", "FIFO");
+
+        // Cost
+        set("cost_labor", 15000);
+        set("cost_printer", 50000000);
+        set("cost_washer", 8000000);
+        set("cost_dryer", 6000000);
+        set("cost_uv", 5000000);
+        set("cost_amr", 30000000);
+        set("cost_dep", 5);
+        set("cost_over", 2000000);
+    }
+
+    window.addEventListener("load", fillDefaults);
 </script>
 
 <style>
 body { font-family: Pretendard, sans-serif; margin:20px; }
 .section { border:1px solid #ccc; padding:15px; margin-bottom:20px; border-radius:6px; }
-.row { display:flex; gap:10px; margin-bottom:8px; }
-.row label { width:240px; }
-input,select { padding:4px; }
+.row { display:flex; gap:10px; margin-bottom:8px; align-items:center; flex-wrap:wrap; }
+.row label { width:260px; min-width:260px; }
+input,select { padding:4px; min-width:180px; }
+.small { min-width:120px; }
 button { padding:10px 20px; background:#0066ff; color:white; border:none; border-radius:5px; cursor:pointer; }
+.muted { color:#666; font-size:12px; margin-top:6px; }
+h1 { margin-bottom:6px; }
+.sub { color:#666; margin-top:0; margin-bottom:16px; }
+.actions { display:flex; gap:10px; margin-bottom:16px; }
 </style>
 </head>
 
 <body>
 <h1>3D Printing Smart Factory – Simulation Config</h1>
+<p class="sub">전체 파라미터를 UI 폼으로 조절한 뒤, 서버에서 시뮬레이션을 실행하고 결과 페이지에서 시각화합니다.</p>
+
+<div class="actions">
+  <button onclick="runSimulation()">시뮬레이션 실행</button>
+  <button onclick="fillDefaults()" style="background:#444;">기본값 다시 채우기</button>
+</div>
 
 <div class="section">
-<h2>테스트 예시 입력 (최소셋)</h2>
-<div class="row">
-    <label>시뮬레이션 기간(분):</label>
-    <input id="sim_duration" value="4320">
+<h2>1) Demand (수요/시뮬레이션 기간)</h2>
+<div class="row"><label>시뮬레이션 기간(분):</label><input id="sim_duration" class="small"></div>
+<div class="row"><label>주문 주기(분):</label><input id="order_cycle" class="small"></div>
+<div class="row"><label>환자 수 범위 (min ~ max):</label>
+  <input id="patients_min" class="small"> ~ <input id="patients_max" class="small">
 </div>
-<div class="row">
-    <label>주문주기(분):</label>
-    <input id="order_cycle" value="120">
+<div class="row"><label>환자당 아이템 수 범위 (min ~ max):</label>
+  <input id="items_min" class="small"> ~ <input id="items_max" class="small">
 </div>
-<div class="row">
-    <label>환자 범위 (min ~ max):</label>
-    <input id="patients_min" value="1"> ~ <input id="patients_max" value="3">
+<div class="row"><label>Due date(분, 옵션):</label><input id="order_due" class="small"></div>
 </div>
-<div class="row">
-    <label>아이템 범위 (min ~ max):</label>
-    <input id="items_min" value="1"> ~ <input id="items_max" value="3">
+
+<div class="section">
+<h2>2) Material (재료/플랫폼)</h2>
+<div class="row"><label>부품 무게(g):</label><input id="mat_weight" class="small"></div>
+<div class="row"><label>레진 비용(원/kg):</label><input id="mat_resin_cost"></div>
+<div class="row"><label>플랫폼 최대 부품 수(팔레트 한도):</label><input id="mat_pallet_limit" class="small"></div>
+<div class="row"><label>초기 플랫폼 개수:</label><input id="mat_initial_plat" class="small"></div>
+</div>
+
+<div class="section">
+<h2>3) Printing (출력)</h2>
+<div class="row"><label>프린터 대수:</label><input id="print_cnt" class="small"></div>
+<div class="row"><label>플랫폼 출력 시간(분):</label><input id="print_time" class="small"></div>
+<div class="row"><label>불량률(0~1):</label><input id="print_defect" class="small"></div>
+
+<div class="row"><label>고장 모델 사용:</label><input type="checkbox" id="print_breakdown"></div>
+<div class="row"><label>MTBF(분):</label><input id="print_mtbf" class="small"></div>
+<div class="row"><label>MTTR(분):</label><input id="print_mttr" class="small"></div>
+
+<div class="row"><label>정기 유지보수 주기(시간):</label><input id="print_maint_cycle" class="small"></div>
+<div class="row"><label>정기 유지보수 소요(분):</label><input id="print_maint_dur" class="small"></div>
+
+<p class="muted">※ 고장/유지보수 로직은 config → main_SimPy → 공정(Printer)에서 반영됩니다.</p>
+</div>
+
+<div class="section">
+<h2>4) Preprocess (전처리)</h2>
+<div class="row"><label>Healing 시간(분/플랫폼):</label><input id="pre_heal" class="small"></div>
+<div class="row"><label>Placement 시간(분/플랫폼):</label><input id="pre_place" class="small"></div>
+<div class="row"><label>Support 생성 시간(분):</label><input id="pre_support" class="small"></div>
+<div class="row"><label>Transfer 방식:</label>
+  <select id="pre_transfer">
+    <option value="amr">AMR</option>
+    <option value="manual">Manual</option>
+  </select>
 </div>
 </div>
 
-<button onclick="runSimulation()">시뮬레이션 실행</button>
+<div class="section">
+<h2>5) Platform Cleaning (플랫폼 세척)</h2>
+<div class="row"><label>세척기 대수:</label><input id="plat_washer_cnt" class="small"></div>
+<div class="row"><label>세척 시간(분):</label><input id="plat_clean_time" class="small"></div>
+</div>
+
+<div class="section">
+<h2>6) Auto Post – Common (세척/건조/UV 공정)</h2>
+<div class="row"><label>Wash1 대수:</label><input id="w1_cnt" class="small"></div>
+<div class="row"><label>Wash1 시간(분):</label><input id="w1_time" class="small"></div>
+
+<div class="row"><label>Wash2 대수:</label><input id="w2_cnt" class="small"></div>
+<div class="row"><label>Wash2 시간(분):</label><input id="w2_time" class="small"></div>
+
+<div class="row"><label>Dry 대수:</label><input id="dry_cnt" class="small"></div>
+<div class="row"><label>Dry 시간(분):</label><input id="dry_time" class="small"></div>
+
+<div class="row"><label>UV 대수:</label><input id="uv_cnt" class="small"></div>
+<div class="row"><label>UV 시간(분):</label><input id="uv_time" class="small"></div>
+
+<div class="row"><label>불량률 Wash1(0~1):</label><input id="def_w1" class="small"></div>
+<div class="row"><label>불량률 Wash2(0~1):</label><input id="def_w2" class="small"></div>
+<div class="row"><label>불량률 Dry(0~1):</label><input id="def_dry" class="small"></div>
+<div class="row"><label>불량률 UV(0~1):</label><input id="def_uv" class="small"></div>
+</div>
+
+<div class="section">
+<h2>7) Auto Post – AMR (AMR/이동)</h2>
+<div class="row"><label>AMR 대수:</label><input id="amr_cnt" class="small"></div>
+<div class="row"><label>AMR 속도(m/s):</label><input id="amr_speed" class="small"></div>
+<div class="row"><label>Load 시간(분):</label><input id="amr_load" class="small"></div>
+<div class="row"><label>Unload 시간(분):</label><input id="amr_unload" class="small"></div>
+
+<div class="row"><label>거리: Printer→Wash1 (m):</label><input id="dist_pw1" class="small"></div>
+<div class="row"><label>거리: Wash1→Wash2 (m):</label><input id="dist_w1w2" class="small"></div>
+<div class="row"><label>거리: Wash2→Dry (m):</label><input id="dist_w2d" class="small"></div>
+<div class="row"><label>거리: Dry→UV (m):</label><input id="dist_duv" class="small"></div>
+
+<div class="row"><label>AMR Shift 사용(옵션):</label><input type="checkbox" id="amr_shift"></div>
+<p class="muted">※ shift_enabled는 현재 config merge용 키로만 포함되어 있으며, 실제 shift gate 반영 여부는 공정 로직 구현에 따릅니다.</p>
+</div>
+
+<div class="section">
+<h2>8) Manual Transport (수동 운반/작업자 이동)</h2>
+<div class="row"><label>운반 작업자 수:</label><input id="man_cnt" class="small"></div>
+<div class="row"><label>도보 속도(m/s):</label><input id="man_speed" class="small"></div>
+
+<div class="row"><label>거리: Printer→Wash1 (m):</label><input id="man_pw1" class="small"></div>
+<div class="row"><label>거리: Wash1→Wash2 (m):</label><input id="man_w1w2" class="small"></div>
+<div class="row"><label>거리: Wash2→Dry (m):</label><input id="man_w2d" class="small"></div>
+<div class="row"><label>거리: Dry→UV (m):</label><input id="man_duv" class="small"></div>
+
+<div class="row"><label>Shift 시작(HH:MM):</label><input id="man_shift_s" class="small"></div>
+<div class="row"><label>Shift 종료(HH:MM):</label><input id="man_shift_e" class="small"></div>
+<div class="row"><label>근무 주기(일, 예:7):</label><input id="man_workdays" class="small"></div>
+</div>
+
+<div class="section">
+<h2>9) Manual Post (수동 후처리 작업시간)</h2>
+<div class="row"><label>서포트 제거 시간(분):</label><input id="mp_sup" class="small"></div>
+<div class="row"><label>후가공 시간(분/파트):</label><input id="mp_finish" class="small"></div>
+<div class="row"><label>도색 시간(분/파트):</label><input id="mp_paint" class="small"></div>
+<div class="row"><label>이동 시간(분, 공통):</label><input id="mp_move" class="small"></div>
+</div>
+
+<div class="section">
+<h2>10) Stacker (버퍼/가드)</h2>
+<div class="row"><label>Stacker Guard 활성:</label><input type="checkbox" id="stk_enabled"></div>
+<div class="row"><label>Stacker 최대 WIP(플랫폼):</label><input id="stk_wip" class="small"></div>
+<div class="row"><label>정책(FIFO 등):</label>
+  <select id="stk_policy">
+    <option value="FIFO">FIFO</option>
+    <option value="LIFO">LIFO</option>
+    <option value="PRIORITY">PRIORITY</option>
+  </select>
+</div>
+<p class="muted">※ 정책은 현재 payload에만 포함되어 있으며, 실제 스태커 pop 규칙은 공정 코드에 구현되어 있어야 적용됩니다.</p>
+</div>
+
+<div class="section">
+<h2>11) Cost (비용)</h2>
+<div class="row"><label>인건비(원/시간):</label><input id="cost_labor"></div>
+<div class="row"><label>프린터 가격(원):</label><input id="cost_printer"></div>
+<div class="row"><label>워셔 가격(원):</label><input id="cost_washer"></div>
+<div class="row"><label>드라이어 가격(원):</label><input id="cost_dryer"></div>
+<div class="row"><label>UV 가격(원):</label><input id="cost_uv"></div>
+<div class="row"><label>AMR 가격(원):</label><input id="cost_amr"></div>
+<div class="row"><label>감가상각(년):</label><input id="cost_dep" class="small"></div>
+<div class="row"><label>고정비(원/월):</label><input id="cost_over"></div>
+</div>
+
+<div class="actions" style="position:sticky; bottom:12px; background:#fff; padding:10px 0; border-top:1px solid #eee;">
+  <button onclick="runSimulation()">시뮬레이션 실행</button>
+  <button onclick="fillDefaults()" style="background:#444;">기본값 다시 채우기</button>
+</div>
 
 </body>
 </html>

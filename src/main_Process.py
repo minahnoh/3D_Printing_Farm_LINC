@@ -7,13 +7,17 @@ from log_SimPy import Logger
 from manager import Manager
 from base_Customer import Customer
 from KPI import KPI
+from factory_platform import Factory
 from config_SimPy import (
     SIM_TIME,
     FACTORY_PLATFORM_CLEAN,
     FACTORY_AUTO_POST,
     FACTORY_PRINT,
-    FACTORY_MANUAL_OPS
+    FACTORY_MANUAL_OPS,
+    PALLET_SIZE_LIMIT,
+    NUM_ITEMS_PER_PATIENT
 )
+
 
 def build_caps_from_cfg() -> dict:
     """
@@ -69,11 +73,10 @@ def run_process_pipeline_validation(sim_duration: Optional[int] = None):
     if sim_duration is None:
         sim_duration = SIM_TIME
 
-    if logger:
-        logger.log_event(
-            "VALIDATION",
-            f"Running sim with config-based order generation (order_cycle_min applied).",
-        )
+    logger.log_event(
+        "VALIDATION",
+        f"Running sim with config-based order generation (order_cycle_min applied)."
+    )
 
     print(f"\nStarting simulation for {sim_duration} minutes...")
     env.run(until=sim_duration)

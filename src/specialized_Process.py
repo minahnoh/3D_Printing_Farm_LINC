@@ -323,9 +323,12 @@ class Print:
                     # 이 플랫폼에 올라간 모든 부품 스크랩
                     scrapped = n_parts
                     self.kpi.scrapped_parts += scrapped
+                    if hasattr(self.kpi, "add_scrap"):
+                        self.kpi.add_scrap("print", scrapped)
 
                     job.is_scrapped_job = True
                     job.scrap_stage = "print"
+
 
                     # Job에 상태 플래그/정보 기록
                     job.is_scrapped_in_print = True      # 플랫폼 전체 불량
@@ -676,6 +679,15 @@ class PostProcessLine:
             yield self.env.timeout(0)
             return None
 
+        # KPI: AMR move count / route count
+        if hasattr(self, "kpi") and self.kpi is not None:
+            try:
+                self.kpi.n_amr_moves += 1
+            except Exception:
+                pass
+            if hasattr(self.kpi, "add_amr_route"):
+                self.kpi.add_amr_route(from_to_key, 1)
+
         dist_m = self.dist[from_to_key]
         drive_min = (dist_m / self.speed_m_per_s) / 60.0
         travel_min = float(self.load_min) + float(drive_min)
@@ -803,6 +815,8 @@ class PostProcessLine:
         scr = int(max(0, n_good))
         if scr > 0:
             self.kpi.scrapped_parts += scr
+            if hasattr(self.kpi, "add_scrap"):
+                self.kpi.add_scrap(stage, scr)
             scrapped_total += scr
 
         job.is_scrapped_job = True
@@ -903,12 +917,16 @@ class PostProcessLine:
         if self.flow_mode == "manual":
             yield from self._stacker_guard_wait()
             yield self.stacker.put(payload)
+            if hasattr(self.kpi, "record_stacker_wip"):
+                self.kpi.record_stacker_wip(self.env.now, len(getattr(self.stacker, "items", [])))
             return
 
         # automated: AMR move + guard + put + unload
         if self.amr_pool is None:
             yield from self._stacker_guard_wait()
             yield self.stacker.put(payload)
+            if hasattr(self.kpi, "record_stacker_wip"):
+                self.kpi.record_stacker_wip(self.env.now, len(getattr(self.stacker, "items", [])))
             return
 
         dist_m = self.dist["uv_to_stacker"]
@@ -925,6 +943,9 @@ class PostProcessLine:
             yield self.env.timeout(travel_min)
             yield from self._stacker_guard_wait()
             yield self.stacker.put(payload)
+            if hasattr(self.kpi, "record_stacker_wip"):
+                self.kpi.record_stacker_wip(self.env.now, len(getattr(self.stacker, "items", [])))
+
 
             if unload_min > 0:
                 yield self.env.timeout(unload_min)
@@ -1055,6 +1076,9 @@ class ManualPost:
         payload = None
         if self.stacker is not None:
             payload = yield self.stacker.get()
+            if hasattr(self.kpi, "record_stacker_wip"):
+                self.kpi.record_stacker_wip(self.env.now, len(getattr(self.stacker, "items", [])))
+
             platform_id = payload.get("platform_id", platform_id)
 
             good_after_auto = payload.get("good_parts_after_auto")
